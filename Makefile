@@ -1,15 +1,26 @@
 CC = gcc
-LIB = -lcrypto -lz -lstdc++ -llz4 -lpthread -lstdc++fs
+LIB = -lcrypto -lz -lstdc++ -llz4 -lpthread -lstdc++fs \
+      -ldoca_sha -ldoca_common -ldoca_argp -L/opt/mellanox/doca/lib/aarch64-linux-gnu/ \
+	  -L./utils/lz4-1.9.1/lib
+
+INC = -I/opt/mellanox/doca/include \
+	  -I/opt/mellanox/doca/samples \
+	  -I/opt/mellanox/doca/applications/common/src \
+	  -I./include -I./utils -I./utils/lz4-1.9.1/lib 
+
 SRC = main.cpp ./src/fastcdc.cpp ./src/full_file_deduplicater.cpp ./src/merkle_tree.cpp \
 	  ./src/MetadataManager.cpp ./src/ContainerCache.cpp ./src/ChunkCache.cpp \
 	  ./src/compressor.cpp \
       ./utils/cJSON.c \
 	  ./src/pipeline.cpp ./src/pipeline_read.cpp ./src/pipeline_chunk.cpp ./src/pipeline_hash.cpp ./src/pipeline_dedup.cpp \
-	  ./src/sync_queue.cpp ./src/queue.cpp ./src/jcr.cpp 
+	  ./src/sync_queue.cpp ./src/queue.cpp ./src/jcr.cpp \
+	  /opt/mellanox/doca/applications/common/src/utils.c \
+	  /opt/mellanox/doca/samples/common.c \
+
 EXE_NAME = cDedup
 
 amazing:
-	$(CC) -std=c++17 $(SRC) $(LIB) -o $(EXE_NAME) -g -O0 -I./include -I./utils -I./utils/lz4-1.9.1/lib -L./utils/lz4-1.9.1/lib
+	$(CC) $(SRC) $(INC) $(LIB) -o $(EXE_NAME) -g -O0 -std=c++17
 
 clean:
 	rm $(EXE_NAME) \

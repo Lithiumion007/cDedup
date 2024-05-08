@@ -29,6 +29,7 @@
 #include "global_stat.h"
 #include "jcr.h"
 #include "pipeline.h"
+#include <dpu_proxy.h>
 
 #define MB (1024*1024)
 #define GB (1024*1024*1024)
@@ -44,14 +45,11 @@ struct backup_job{
 
 namespace fs = std::experimental::filesystem;
 
-uint32_t rev_container_cnt = 0;
-unsigned char rev_container_buf[CONTAINER_SIZE]={0};
-unsigned char tmp_buf[CONTAINER_SIZE]={0};
-
 char* global_stat_path = "/home/cyf/cDedup/global_stat.json";
 extern MetadataManager *GlobalMetadataManagerPtr;
 int (*chunking) (unsigned char*p, int n);
 struct backup_job bj;
+DPU_PROXY dpu;
 
 uint32_t getFilesNum(const char* dirPath){
     int ans = 0;
@@ -139,12 +137,6 @@ void saveContainer(int container_index, unsigned char* container_buf, unsigned i
         exit(-1);
     }
     close(fd);
-    container_name.append("r");
-    fd = open(container_name.data(), O_WRONLY | O_CREAT, 0777);
-    //printf("rev_container_cnt: %d\n",rev_container_cnt);
-    write(fd, &rev_container_cnt, sizeof(uint32_t));
-    write(fd, &rev_container_buf, rev_container_cnt * sizeof(SHA1FP));
-    close(fd);
 }
 
 void saveChunkToContainer(unsigned int& container_buf_pointer, unsigned char* container_buf, 
@@ -159,80 +151,10 @@ void saveChunkToContainer(unsigned int& container_buf_pointer, unsigned char* co
         container_inner_offset = 0;
         container_buf_pointer = 0;
         container_inner_index = 0;
-
-        rev_container_cnt = 0;
     }
 
     // container buffer
     memcpy(container_buf + container_buf_pointer, file_cache + file_offset, chunk_length);
-    memcpy(rev_container_buf + sizeof(SHA1FP)*rev_container_cnt, SHA_buf, sizeof(SHA1FP));
-
-    // SHA1FP tt;
-    // memcpy(&tt, SHA_buf, sizeof(SHA1FP));
-    // if(GlobalMetadataManagerPtr->dedupLookup(tt) == Unique) {
-    //     printf("asdfasdfasdfasdfasdfasdfa\n");
-    //     exit(-1);
-    // }
-
-}
-
-void del_seg(std::string s, int oft, int len){
-    int fd = open(s.c_str(), O_RDONLY, 0777);
-    std::string s2 = s + "tmp";
-    int fd2 = open(s2.c_str(), O_RDWR | O_CREAT, 0777);
-
-    read(fd, tmp_buf, oft);
-    write(fd2, tmp_buf, oft);
-
-    read(fd, tmp_buf, len);
-
-    int tt = read(fd, tmp_buf, CONTAINER_SIZE);
-    write(fd2, tmp_buf, tt);
-
-    close(fd);
-    close(fd2);
-
-    remove(s.c_str());
-    if(oft == 0 && tt == 0)
-        remove(s2.c_str());
-    else
-        rename(s2.c_str(), s.c_str());
-}
-
-void container_del_chunk(int ctr_id, SHA1FP del_sha, int oft, int len){
-    std::string ctr_path = std::string(Config::getInstance().getContainersPath().c_str());
-    ctr_path.append("/container");
-    ctr_path.append(std::to_string(ctr_id));
-    del_seg(ctr_path, oft, len);
-    
-    ctr_path.append("r");
-    int fd = open(ctr_path.c_str(), O_RDONLY, 0777);
-    read(fd, &rev_container_cnt, sizeof(uint32_t));
-    if(rev_container_cnt == 1){
-        close(fd);
-        remove(ctr_path.c_str());
-        return;
-    }
-    int d_pos = -1;
-    for(int a = 0; a < rev_container_cnt; a++){
-        SHA1FP sha1t;
-        read(fd, &sha1t, sizeof(SHA1FP));
-        TupleEqualer te;
-        if(te(sha1t, del_sha)){
-            d_pos = a;
-            continue;
-        }
-        GlobalMetadataManagerPtr->chunkOffsetDec(sha1t, oft, len);
-    }
-    close(fd);
-    rev_container_cnt--;
-
-    fd = open(ctr_path.c_str(), O_WRONLY | O_CREAT, 0777);
-    lseek(fd, 0, SEEK_SET);
-    write(fd, &rev_container_cnt, sizeof(uint32_t));
-    close(fd);
-
-    del_seg(ctr_path, sizeof(uint32_t) + d_pos*sizeof(SHA1FP), sizeof(SHA1FP));
 }
 
 void flushAssemblingBuffer(int fd, unsigned char* buf, int len){
@@ -304,14 +226,8 @@ void writeFile(string path){
     uint64_t sum_size = 0;
     uint64_t hash_collision_sum = 0;
 
-    // 打桩重删
-    uint32_t current_version = getFilesNum(Config::getInstance().getFileRecipesPath().c_str());
-    uint32_t piling_num = Config::getInstance().getPilingNum();
-    uint32_t chain_num = Config::getInstance().getChainNum();
-    uint32_t min_destination_piling = current_version -  current_version % (piling_num + chain_num);
-    uint32_t max_destination_piling = min_destination_piling + piling_num - 1;
-    bool in_chain = (current_version % (piling_num + chain_num)) > (piling_num-1);
     
+
     // 普通分块重删，来一个块查寻一次，然后把non-duplicate chunk保存到container去
     for(;;){
         file_offset = 0;
@@ -328,7 +244,11 @@ void writeFile(string path){
             
             // Hash
             memset(&sha1_fp, 0, sizeof(struct SHA1FP));
-            SHA1(file_cache + file_offset, chunk_length, (uint8_t*)&sha1_fp);
+
+            dpu.doca_sha_init(file_cache + file_offset, chunk_length,
+                                (uint8_t*)&sha1_fp, 20);
+            dpu.doca_SHA1();
+            //SHA1(file_cache + file_offset, chunk_length, (uint8_t*)&sha1_fp);
 
             // Dedup
             LookupResult lookup_result;
@@ -347,15 +267,12 @@ void writeFile(string path){
                 entry_value.offset = container_inner_offset;
                 entry_value.chunk_length = chunk_length;
                 entry_value.container_inner_index = container_inner_index;
-                entry_value.version = current_version;
-                entry_value.ref_cnt = 1;
                 GlobalMetadataManagerPtr->addNewEntry(sha1_fp, entry_value);
 
                 // rev
                 container_inner_offset += chunk_length;
                 container_buf_pointer += chunk_length;
                 container_inner_index ++;
-                rev_container_cnt ++;
 
             }else if(lookup_result == Dedup){
                 GlobalMetadataManagerPtr->addRefCnt(sha1_fp);
@@ -654,52 +571,6 @@ int main(int argc, char** argv){
         printf("Restore size %d\n", restore_size);
         printf("Restore Throughput %.2f MiB/s\n", restore_throughput);
 
-    }else if(Config::getInstance().getTaskType() == TASK_DELETE){
-        struct timeval delete_time_start, delete_time_end;
-        gettimeofday(&delete_time_start, NULL);
-
-        // 根据 json 文件中的 fileRecipesPath 和 RestoreVersion 选择要删除的文件
-
-        if(!fileRecipeExist(Config::getInstance().getRestoreVersion(),
-                            Config::getInstance().getFileRecipesPath().c_str())){
-            printf("Version %d not exist!\n", Config::getInstance().getRestoreVersion());
-            return 0;
-        }
-        std::vector<std::string> file_recipe = getFileRecipe(Config::getInstance().getRestoreVersion(),
-                                                             Config::getInstance().getFileRecipesPath().c_str());
-        
-
-        for(auto &x : file_recipe){
-                SHA1FP fp;
-                memcpy(&fp, x.data(), sizeof(SHA1FP));
-                LookupResult res = GlobalMetadataManagerPtr->dedupLookup(fp);
-
-                if(res == Unique){
-                    printf("Fatal error!!!\n");
-                    exit(-1);
-                }
-
-                ENTRY_VALUE ev = GlobalMetadataManagerPtr->getEntry(fp);
-
-                int dv = GlobalMetadataManagerPtr->decRefCnt(fp);
-
-                if(dv == 0){
-                    container_del_chunk(ev.container_number, fp, ev.offset, ev.chunk_length);
-                }
-        }
-
-        std::string abs_file = getRecipeNameFromVersion(Config::getInstance().getRestoreVersion(),
-                                        Config::getInstance().getFileRecipesPath().c_str());
-        remove(abs_file.c_str());
-
-        GlobalMetadataManagerPtr->save();
-
-        gettimeofday(&delete_time_end, NULL);
-        uint64_t single_delete_time_us = (delete_time_end.tv_sec - delete_time_start.tv_sec) * 1000000 + delete_time_end.tv_usec - delete_time_start.tv_usec;
-        printf("-----------------------Delete Statics----------------------\n");
-        printf("Delete time %d ms\n", single_delete_time_us/1000);
     }
-
-    
     return 0;
 }
