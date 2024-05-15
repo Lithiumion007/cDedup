@@ -1,45 +1,40 @@
-#!/bin/bash
-
-# Destination directory where you want to save the source code
-destination_dir="/home/cyf/dataHDD/linuxVersion"
-
-# URL of the Linux kernel archive page
-kernel_archive_url="https://mirrors.edge.kernel.org/pub/linux/kernel/v5.x/"
-
-# Use curl to fetch the HTML content of the archive page
-archive_page=$(curl -s "$kernel_archive_url")
-
-
-# Use grep and awk to extract links to Linux kernel 5.x versions
-versions=($(echo "$archive_page" | grep -oP 'linux-5.\d+\.\d+' | awk '!seen[$0]++'))
-# 太多了，200个就够了
-versions=("${versions[@]:0:200}")
-
-# Download function
-download_version() {
-    local version="$1"
-    local url="https://www.kernel.org/pub/linux/kernel/v5.x/$version.tar.gz"
-    wget "$url" -P "$destination_dir"
-}
-
-# Number of parallel downloads to run
-max_parallel_downloads=16
-
-# Counter for parallel downloads
-current_parallel_downloads=0
-
-# Loop through the versions and download in parallel
-for version in "${versions[@]}"; do
-    if [ "$current_parallel_downloads" -ge "$max_parallel_downloads" ]; then
-        wait
-        current_parallel_downloads=0
-    fi
-
-    download_version "$version" &
-    ((current_parallel_downloads++))
-done
-
-# Wait for any remaining background downloads to finish
-wait
-
-echo "All downloads are complete."
+wget https://github.com/ggerganov/llama.cpp/archive/refs/tags/b2715.tar.gz
+wget https://github.com/ggerganov/llama.cpp/archive/refs/tags/b2714.tar.gz
+wget https://github.com/ggerganov/llama.cpp/archive/refs/tags/b2712.tar.gz
+wget https://github.com/ggerganov/llama.cpp/archive/refs/tags/b2710.tar.gz
+wget https://github.com/ggerganov/llama.cpp/archive/refs/tags/b2709.tar.gz
+wget https://github.com/ggerganov/llama.cpp/archive/refs/tags/b2708.tar.gz
+wget https://github.com/ggerganov/llama.cpp/archive/refs/tags/b2707.tar.gz
+wget https://github.com/ggerganov/llama.cpp/archive/refs/tags/b2702.tar.gz
+wget https://github.com/ggerganov/llama.cpp/archive/refs/tags/b2700.tar.gz
+wget https://github.com/ggerganov/llama.cpp/archive/refs/tags/b2699.tar.gz
+wget https://github.com/google/leveldb/archive/refs/tags/1.23.tar.gz
+wget https://github.com/google/leveldb/archive/refs/tags/1.22.tar.gz
+wget https://github.com/google/leveldb/archive/refs/tags/1.21.tar.gz
+wget https://github.com/google/leveldb/archive/refs/tags/v1.20.tar.gz
+wget https://github.com/google/leveldb/archive/refs/tags/v1.19.tar.gz
+wget https://github.com/google/leveldb/archive/refs/tags/v1.18.tar.gz
+wget https://github.com/google/leveldb/archive/refs/tags/v1.17.tar.gz
+wget https://github.com/google/leveldb/archive/refs/tags/v1.16.tar.gz
+wget https://github.com/google/leveldb/archive/refs/tags/v1.15.tar.gz
+wget https://github.com/google/leveldb/archive/refs/tags/v1.14.tar.gz
+wget https://github.com/torvalds/linux/archive/refs/tags/v6.9-rc5.tar.gz
+wget https://github.com/torvalds/linux/archive/refs/tags/v6.9-rc4.tar.gz
+wget https://github.com/torvalds/linux/archive/refs/tags/v6.9-rc3.tar.gz
+wget https://github.com/torvalds/linux/archive/refs/tags/v6.9-rc2.tar.gz
+wget https://github.com/torvalds/linux/archive/refs/tags/v6.9-rc1.tar.gz
+wget https://github.com/torvalds/linux/archive/refs/tags/v6.8.tar.gz
+wget https://github.com/torvalds/linux/archive/refs/tags/v6.8-rc7.tar.gz
+wget https://github.com/torvalds/linux/archive/refs/tags/v6.8-rc6.tar.gz
+wget https://github.com/torvalds/linux/archive/refs/tags/v6.8-rc5.tar.gz
+wget https://github.com/torvalds/linux/archive/refs/tags/v6.8-rc4.tar.gz
+wget https://github.com/gcc-mirror/gcc/archive/refs/tags/vendors/ARM/release-12.3.rel1.tar.gz
+wget https://github.com/gcc-mirror/gcc/archive/refs/tags/releases/gcc-13.2.0.tar.gz
+wget https://github.com/gcc-mirror/gcc/archive/refs/tags/releases/gcc-10.5.0.tar.gz
+wget https://github.com/gcc-mirror/gcc/archive/refs/tags/releases/gcc-11.4.0.tar.gz
+wget https://github.com/gcc-mirror/gcc/archive/refs/tags/Thesis.tar.gz
+wget https://github.com/gcc-mirror/gcc/archive/refs/tags/releases/gcc-12.3.0.tar.gz
+wget https://github.com/gcc-mirror/gcc/archive/refs/tags/releases/gcc-13.1.0.tar.gz
+wget https://github.com/gcc-mirror/gcc/archive/refs/tags/basepoints/gcc-14.tar.gz
+wget https://github.com/gcc-mirror/gcc/archive/refs/tags/release-12.2.mpacbti-rel1.tar.gz
+wget https://github.com/gcc-mirror/gcc/archive/refs/tags/release-12.2.mpacbti-bet1.tar.gz

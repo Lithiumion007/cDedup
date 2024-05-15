@@ -272,3 +272,28 @@ int FSC_16(unsigned char *p, int n) {
         return 16*1024;
     return n;
 }
+
+int align_chunk_by_condition(unsigned char *p, int n, int original_chunk_size, int(*condition_func)(int)) {
+	p += original_chunk_size;
+	n -= original_chunk_size;
+	int boundary_skew = 0;
+
+	while (original_chunk_size + boundary_skew <= MaxSize &&
+		boundary_skew < n && !condition_func(p[boundary_skew])) {
+		boundary_skew++;
+	}
+
+	if (original_chunk_size + boundary_skew <= MaxSize && boundary_skew < n) {
+		boundary_skew++; 
+	}
+
+	return boundary_skew;
+}
+
+int isNewline(int k) {
+	return k == '\n';
+}
+
+int align_chunk_to_enterSymbol(unsigned char* p, int n, int original_chunk_size) {
+	return align_chunk_by_condition(p, n, original_chunk_size, isNewline);
+}

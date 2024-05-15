@@ -40,18 +40,24 @@ struct backup_job{
     uint64_t dedup_chunks;
     uint64_t dedup_size;
     uint64_t file_num;
+    
+    uint32_t code_lines;
+    uint32_t comment_lines;
+    uint32_t blank_lines;
 };
 
 namespace fs = std::experimental::filesystem;
 
-uint32_t rev_container_cnt = 0;
-unsigned char rev_container_buf[CONTAINER_SIZE]={0};
-unsigned char tmp_buf[CONTAINER_SIZE]={0};
-
 char* global_stat_path = "/home/cyf/cDedup/global_stat.json";
 extern MetadataManager *GlobalMetadataManagerPtr;
-int (*chunking) (unsigned char*p, int n);
 struct backup_job bj;
+int (*chunking) (unsigned char*p, int n);
+int cpp_file_num = 0;
+
+// used for normal count
+uint64_t global_code_line = 0;
+uint64_t global_blank_line = 0;
+uint64_t global_comment_line = 0;
 
 uint32_t getFilesNum(const char* dirPath){
     int ans = 0;
@@ -139,12 +145,6 @@ void saveContainer(int container_index, unsigned char* container_buf, unsigned i
         exit(-1);
     }
     close(fd);
-    container_name.append("r");
-    fd = open(container_name.data(), O_WRONLY | O_CREAT, 0777);
-    //printf("rev_container_cnt: %d\n",rev_container_cnt);
-    write(fd, &rev_container_cnt, sizeof(uint32_t));
-    write(fd, &rev_container_buf, rev_container_cnt * sizeof(SHA1FP));
-    close(fd);
 }
 
 void saveChunkToContainer(unsigned int& container_buf_pointer, unsigned char* container_buf, 
@@ -159,80 +159,10 @@ void saveChunkToContainer(unsigned int& container_buf_pointer, unsigned char* co
         container_inner_offset = 0;
         container_buf_pointer = 0;
         container_inner_index = 0;
-
-        rev_container_cnt = 0;
     }
 
     // container buffer
     memcpy(container_buf + container_buf_pointer, file_cache + file_offset, chunk_length);
-    memcpy(rev_container_buf + sizeof(SHA1FP)*rev_container_cnt, SHA_buf, sizeof(SHA1FP));
-
-    // SHA1FP tt;
-    // memcpy(&tt, SHA_buf, sizeof(SHA1FP));
-    // if(GlobalMetadataManagerPtr->dedupLookup(tt) == Unique) {
-    //     printf("asdfasdfasdfasdfasdfasdfa\n");
-    //     exit(-1);
-    // }
-
-}
-
-void del_seg(std::string s, int oft, int len){
-    int fd = open(s.c_str(), O_RDONLY, 0777);
-    std::string s2 = s + "tmp";
-    int fd2 = open(s2.c_str(), O_RDWR | O_CREAT, 0777);
-
-    read(fd, tmp_buf, oft);
-    write(fd2, tmp_buf, oft);
-
-    read(fd, tmp_buf, len);
-
-    int tt = read(fd, tmp_buf, CONTAINER_SIZE);
-    write(fd2, tmp_buf, tt);
-
-    close(fd);
-    close(fd2);
-
-    remove(s.c_str());
-    if(oft == 0 && tt == 0)
-        remove(s2.c_str());
-    else
-        rename(s2.c_str(), s.c_str());
-}
-
-void container_del_chunk(int ctr_id, SHA1FP del_sha, int oft, int len){
-    std::string ctr_path = std::string(Config::getInstance().getContainersPath().c_str());
-    ctr_path.append("/container");
-    ctr_path.append(std::to_string(ctr_id));
-    del_seg(ctr_path, oft, len);
-    
-    ctr_path.append("r");
-    int fd = open(ctr_path.c_str(), O_RDONLY, 0777);
-    read(fd, &rev_container_cnt, sizeof(uint32_t));
-    if(rev_container_cnt == 1){
-        close(fd);
-        remove(ctr_path.c_str());
-        return;
-    }
-    int d_pos = -1;
-    for(int a = 0; a < rev_container_cnt; a++){
-        SHA1FP sha1t;
-        read(fd, &sha1t, sizeof(SHA1FP));
-        TupleEqualer te;
-        if(te(sha1t, del_sha)){
-            d_pos = a;
-            continue;
-        }
-        GlobalMetadataManagerPtr->chunkOffsetDec(sha1t, oft, len);
-    }
-    close(fd);
-    rev_container_cnt--;
-
-    fd = open(ctr_path.c_str(), O_WRONLY | O_CREAT, 0777);
-    lseek(fd, 0, SEEK_SET);
-    write(fd, &rev_container_cnt, sizeof(uint32_t));
-    close(fd);
-
-    del_seg(ctr_path, sizeof(uint32_t) + d_pos*sizeof(SHA1FP), sizeof(SHA1FP));
 }
 
 void flushAssemblingBuffer(int fd, unsigned char* buf, int len){
@@ -273,6 +203,56 @@ void initChunkingAlgorithm(){
     }
 }
 
+/*
+    代码行必须有回车才能算作一行，如果最后一行代码没回车，那么不被算作一行；
+*/
+void countLines(uint8_t *c, uint32_t length,
+                uint64_t& code_lines, uint64_t& comment_lines, uint64_t& blank_lines) {
+    enum { CODE, BLOCK_COMMENT, LINE_COMMENT } state = CODE;
+    bool line_first_char = true;
+    for (size_t i = 0; i < length; i++) {
+        unsigned char currentChar = c[i];
+        unsigned char nextChar = (i < length - 1) ? c[i + 1] : '\0';
+
+        if (state == CODE) {
+            if (currentChar == '/' && nextChar == '*') {
+                state = BLOCK_COMMENT;
+                line_first_char = false;
+                i+=2;
+            } else if (currentChar == '/' && nextChar == '/') {
+                state = LINE_COMMENT;
+                line_first_char = false;
+                i+=2;
+                comment_lines++;
+            } else if (currentChar == '\n') {
+                if(line_first_char)
+                    blank_lines ++;
+                else
+                    code_lines++;
+                line_first_char = true;
+            }else{
+                line_first_char = false;
+            }
+        } else if (state == BLOCK_COMMENT) {
+            if (currentChar == '*' && nextChar == '/') {
+                state = CODE;
+                line_first_char = false;
+                i+=2;
+                comment_lines++;
+            }else if (currentChar == '\n') {
+                line_first_char = true;
+                comment_lines++;
+            }
+        } else if (state == LINE_COMMENT) {
+            if (currentChar == '\n') {
+                line_first_char = true;
+                state = CODE;
+                comment_lines++;
+            }
+        }
+    }
+}
+
 void writeFile(string path){
     int idf = open(path.c_str(), O_RDONLY, 0777);
     if(idf < 0){
@@ -303,14 +283,13 @@ void writeFile(string path){
     uint64_t sum_chunks = 0;
     uint64_t sum_size = 0;
     uint64_t hash_collision_sum = 0;
+    uint64_t file_code_lines = 0;
+    uint64_t file_comment_lines = 0;
+    uint64_t file_blank_lines = 0;
 
-    // 打桩重删
-    uint32_t current_version = getFilesNum(Config::getInstance().getFileRecipesPath().c_str());
-    uint32_t piling_num = Config::getInstance().getPilingNum();
-    uint32_t chain_num = Config::getInstance().getChainNum();
-    uint32_t min_destination_piling = current_version -  current_version % (piling_num + chain_num);
-    uint32_t max_destination_piling = min_destination_piling + piling_num - 1;
-    bool in_chain = (current_version % (piling_num + chain_num)) > (piling_num-1);
+    uint64_t chunk_code_lines = 0;
+    uint64_t chunk_comment_lines = 0;
+    uint64_t chunk_blank_lines = 0;
     
     // 普通分块重删，来一个块查寻一次，然后把non-duplicate chunk保存到container去
     for(;;){
@@ -325,6 +304,9 @@ void writeFile(string path){
         while(file_offset < n_read){  
             // Chunk
             chunk_length = chunking(file_cache + file_offset, n_read - file_offset);
+
+            // Newline aware chunking
+            //chunk_length += align_chunk_to_enterSymbol(file_cache + file_offset, n_read - file_offset, chunk_length);
             
             // Hash
             memset(&sha1_fp, 0, sizeof(struct SHA1FP));
@@ -342,29 +324,39 @@ void writeFile(string path){
                                     chunk_length, file_offset, file_cache, (void*)&sha1_fp,
                                     Config::getInstance().getContainersPath().c_str());
                 
+                // 唯一块需要扫描cloc
+                countLines(file_cache + file_offset, chunk_length, 
+                chunk_code_lines, chunk_comment_lines, chunk_blank_lines);
+
                 // save chunk metadata
                 entry_value.container_number = container_index;
                 entry_value.offset = container_inner_offset;
                 entry_value.chunk_length = chunk_length;
                 entry_value.container_inner_index = container_inner_index;
-                entry_value.version = current_version;
-                entry_value.ref_cnt = 1;
+
+                entry_value.code_lines = chunk_code_lines;
+                entry_value.comment_lines = chunk_comment_lines;
+                entry_value.blank_lines = chunk_blank_lines;
                 GlobalMetadataManagerPtr->addNewEntry(sha1_fp, entry_value);
 
-                // rev
                 container_inner_offset += chunk_length;
                 container_buf_pointer += chunk_length;
                 container_inner_index ++;
-                rev_container_cnt ++;
+
+                file_code_lines += chunk_code_lines;
+                file_comment_lines += chunk_comment_lines;
+                file_blank_lines += chunk_blank_lines;
 
             }else if(lookup_result == Dedup){
-                GlobalMetadataManagerPtr->addRefCnt(sha1_fp);
                 // 重删统计
-                dedup_chunks ++;
-                dedup_size += chunk_length;
+               dedup_chunks ++;
+               dedup_size += chunk_length;
 
-                // 可能遇到哈希碰撞
-                // TODO
+               // 重复块直接查表cloc
+               ENTRY_VALUE tmp_ev = GlobalMetadataManagerPtr->getAddedEntry(sha1_fp);
+               file_code_lines += tmp_ev.code_lines;
+               file_comment_lines += tmp_ev.comment_lines;
+               file_blank_lines += tmp_ev.blank_lines;
             }
 
             // Insert fingerprint into file recipe
@@ -375,6 +367,10 @@ void writeFile(string path){
             sum_size += chunk_length;
 
             file_offset += chunk_length;
+
+            chunk_code_lines = 0;
+            chunk_comment_lines = 0;
+            chunk_blank_lines = 0;
         }
     }
 
@@ -385,10 +381,6 @@ void writeFile(string path){
     
     // flush file_recipe
     saveFileRecipe(file_recipe, Config::getInstance().getFileRecipesPath().c_str());
-    // printf("Sum chunks %" PRIu64 "\n",    sum_chunks);
-    // printf("Sum size %" PRIu64 "\n",    sum_size);
-    // printf("Unique chunks %" PRIu64 "\n",    sum_chunks - dedup_chunks);
-    printf("Dedup Ratio %.2f%\n",     double(dedup_size) / double(sum_size) *100);
 
     // update backup job
     bj.dedup_chunks += dedup_chunks;
@@ -398,9 +390,21 @@ void writeFile(string path){
     bj.hash_collision_sum += hash_collision_sum;
     bj.file_num++;
 
+    bj.code_lines += file_code_lines;
+    bj.comment_lines += file_comment_lines;
+    bj.blank_lines += file_blank_lines;
+
     // free 
     close(idf);
     free(file_cache);
+}
+
+std::string getExtension(const std::string& filename) {
+    size_t pos = filename.find_last_of(".");
+    if (pos != std::string::npos && pos < filename.size() - 1) {
+        return filename.substr(pos + 1);
+    }
+    return ""; // 如果没有找到点或者点后面没有字符，则返回空字符串
 }
 
 std::vector<fs::path> traverseDirectory(const fs::path& directory) {
@@ -410,9 +414,15 @@ std::vector<fs::path> traverseDirectory(const fs::path& directory) {
         // 遍历目录
         for (const auto& entry : fs::directory_iterator(directory)) {
             if (fs::is_regular_file(entry)) {
-                files.push_back(entry.path());
+                std::string extension = getExtension(entry.path().string());
+                if(extension == "cpp" || extension == "cc" || extension == "c"){
+                    cpp_file_num ++;
+                    files.push_back(entry.path());
+                }
+                    
             } else if (fs::is_directory(entry)) {
-                traverseDirectory(entry.path());
+                std::vector<fs::path> r_files = traverseDirectory(entry.path());
+                files.insert(files.end(), r_files.begin(), r_files.end());
             }
         }
 
@@ -426,6 +436,7 @@ void traverseWriteDirectory(const fs::path& directory) {
     try {
         // 遍历目录
         std::vector<fs::path> files = traverseDirectory(directory);
+        printf("Found %zu files in %s\n", files.size(), directory.string().c_str());
 
         // 对文件名进行排序
         std::sort(files.begin(), files.end());
@@ -436,6 +447,32 @@ void traverseWriteDirectory(const fs::path& directory) {
         }
             
         
+    } catch (const std::exception& ex) {
+        std::cerr << "Error: " << ex.what() << std::endl;
+    }
+}
+
+void countFile(string file_name){
+    int fd = open(file_name.c_str(), O_RDONLY, 0777);
+    unsigned char* file_cache = (unsigned char*)malloc(FILE_CACHE);
+
+    int n_read = read(fd, file_cache, FILE_CACHE);
+    countLines(file_cache, n_read, global_code_line, global_comment_line, global_blank_line);
+}
+
+
+void traverseCountDirectory(const fs::path& directory) {
+    try {
+        // 遍历目录
+        std::vector<fs::path> files = traverseDirectory(directory);
+        printf("Found %zu files in %s\n", files.size(), directory.string().c_str());
+
+        // 对文件名进行排序
+        std::sort(files.begin(), files.end());
+
+        for (const auto& path : files){
+            countFile(path);
+        }
     } catch (const std::exception& ex) {
         std::cerr << "Error: " << ex.what() << std::endl;
     }
@@ -452,8 +489,32 @@ int main(int argc, char** argv){
     GlobalStat::getInstance().parse_arguments(global_stat_path);
     
     GlobalMetadataManagerPtr = new MetadataManager(Config::getInstance().getFingerprintsFilePath().c_str());
-    
-    if(Config::getInstance().getTaskType() == TASK_WRITE){
+    if(Config::getInstance().getTaskType() == TASK_LOC){
+        string input_path = Config::getInstance().getInputPath();
+
+        if (!fs::exists(input_path)) {
+            std::cerr << "Error: Input path does not exist." << std::endl;
+            return 1;
+        }
+
+        struct timeval backup_time_start, backup_time_end;
+        gettimeofday(&backup_time_start, NULL);
+
+        if (!fs::is_directory(input_path)) {
+            countFile(input_path);
+        }else{
+            traverseCountDirectory(input_path);
+        }
+
+        printf("-----------------------Code line statics----------------------\n");
+        printf("CPP files num %d\n", cpp_file_num);
+        printf("Code lines %" PRIu64 "\n",            global_code_line);
+        printf("Comment lines %" PRIu64 "\n",         global_comment_line);
+        printf("Blank lines %" PRIu64 "\n",           global_blank_line);
+
+    }else if(Config::getInstance().getTaskType() == TASK_WRITE){
+        // Inline counting
+        
         int current_version = getFilesNum(Config::getInstance().getFileRecipesPath().c_str());
         if(current_version != 0){
             GlobalMetadataManagerPtr->load();
@@ -492,6 +553,11 @@ int main(int argc, char** argv){
         printf("Average chunk size %" PRIu64 "\n",    bj.sum_size / bj.sum_chunks);
         printf("Dedup chunks num %" PRIu64 "\n",      bj.dedup_chunks);
         printf("Dedup data size %" PRIu64 "\n",       bj.dedup_size);
+        printf("-----------------------Code line statics----------------------\n");
+        printf("CPP files num %d\n", cpp_file_num);
+        printf("Code lines %" PRIu64 "\n",            bj.code_lines);
+        printf("Comment lines %" PRIu64 "\n",         bj.comment_lines);
+        printf("Blank lines %" PRIu64 "\n",           bj.blank_lines);
         printf("-----------------------statics----------------------\n");
         printf("Throughput %.2f MiB/s\n",    throughput);
         printf("Dedup Ratio %.2f%\n",     double(bj.dedup_size) / double(bj.sum_size) *100);
@@ -504,6 +570,8 @@ int main(int argc, char** argv){
         GlobalMetadataManagerPtr->save();
 
     }else if(Config::getInstance().getTaskType() == TASK_RESTORE){
+        // Offline counting
+
         int current_version = getFilesNum(Config::getInstance().getFileRecipesPath().c_str());
         if(current_version != 0){
             GlobalMetadataManagerPtr->load();
@@ -575,73 +643,6 @@ int main(int argc, char** argv){
 
             flushAssemblingBuffer(fd, assembling_buffer, write_buffer_offset);
             close(fd);
-        }else if(Config::getInstance().getRestoreMethod() == FAA_FIXED){
-            int fd = open(Config::getInstance().getRestorePath().c_str(), O_RDWR | O_CREAT, 0777);
-            if(fd < 0){
-                printf("无法写文件!!! %s\n", strerror(errno));
-                exit(-1);
-            }
-
-            unsigned char* container_read_buffer = (unsigned char*)malloc(CONTAINER_SIZE);
-            memset(container_read_buffer, 0, CONTAINER_SIZE);
-            int buffered_CID = -1;
-
-            int recipe_offset = 0;
-            std::vector<recipe_buffer_entry> recipe_buffer;
-            int write_length_from_recipe_buffer = 0;
-            int faa_start = 0;
-
-            while(recipe_offset <= file_recipe.size()-1){
-                // 1.从文件recipe取一段截到recipe buffer
-                write_length_from_recipe_buffer = 0;
-                faa_start = 0;
-                recipe_buffer.clear();
-                for(; recipe_offset<=file_recipe.size()-1; recipe_offset++){
-                    SHA1FP fp;
-                    memcpy(&fp, file_recipe[recipe_offset].data(), sizeof(SHA1FP));
-                    ENTRY_VALUE ev = GlobalMetadataManagerPtr->getEntry(fp);
-
-                    if(write_length_from_recipe_buffer + ev.chunk_length <= FILE_CACHE){
-                        recipe_buffer.emplace_back(
-                            recipe_buffer_entry(ev.container_number, ev.chunk_length, ev.offset, faa_start, false));
-                        faa_start += ev.chunk_length;
-                        write_length_from_recipe_buffer += ev.chunk_length;
-                    }else{
-                        break;  
-                    }
-                }
-                
-                // 2.根据recipe buffer填充assembling buffer
-                while(1){
-                    int flag = 0;
-                    for(auto &x : recipe_buffer){
-                        if(!x.used){
-                            buffered_CID = x.CID;
-                            FAA::loadContainer(buffered_CID, Config::getInstance().getContainersPath(), container_read_buffer);
-                            flag = 1;
-                            break;
-                        }
-                    }
-                    if(flag == 0) break;
-
-                    for(auto &x : recipe_buffer){
-                        if(!x.used){
-                            if(x.CID == buffered_CID){
-                                memcpy(assembling_buffer + x.faa_start, 
-                                container_read_buffer + x.container_offset, x.length);
-                                x.used = true;
-
-                                restore_size += x.length;
-                            }
-                        }
-                    }
-                }
-
-                // 3.当前recipe buffer已使用完，将faa刷入磁盘
-                flushAssemblingBuffer(fd, assembling_buffer, write_length_from_recipe_buffer);
-            }
-
-            close(fd);
         }else{
             printf("暂不支持的恢复算法 %d\n", Config::getInstance().getRestoreMethod());
             exit(-1);
@@ -654,52 +655,6 @@ int main(int argc, char** argv){
         printf("Restore size %d\n", restore_size);
         printf("Restore Throughput %.2f MiB/s\n", restore_throughput);
 
-    }else if(Config::getInstance().getTaskType() == TASK_DELETE){
-        struct timeval delete_time_start, delete_time_end;
-        gettimeofday(&delete_time_start, NULL);
-
-        // 根据 json 文件中的 fileRecipesPath 和 RestoreVersion 选择要删除的文件
-
-        if(!fileRecipeExist(Config::getInstance().getRestoreVersion(),
-                            Config::getInstance().getFileRecipesPath().c_str())){
-            printf("Version %d not exist!\n", Config::getInstance().getRestoreVersion());
-            return 0;
-        }
-        std::vector<std::string> file_recipe = getFileRecipe(Config::getInstance().getRestoreVersion(),
-                                                             Config::getInstance().getFileRecipesPath().c_str());
-        
-
-        for(auto &x : file_recipe){
-                SHA1FP fp;
-                memcpy(&fp, x.data(), sizeof(SHA1FP));
-                LookupResult res = GlobalMetadataManagerPtr->dedupLookup(fp);
-
-                if(res == Unique){
-                    printf("Fatal error!!!\n");
-                    exit(-1);
-                }
-
-                ENTRY_VALUE ev = GlobalMetadataManagerPtr->getEntry(fp);
-
-                int dv = GlobalMetadataManagerPtr->decRefCnt(fp);
-
-                if(dv == 0){
-                    container_del_chunk(ev.container_number, fp, ev.offset, ev.chunk_length);
-                }
-        }
-
-        std::string abs_file = getRecipeNameFromVersion(Config::getInstance().getRestoreVersion(),
-                                        Config::getInstance().getFileRecipesPath().c_str());
-        remove(abs_file.c_str());
-
-        GlobalMetadataManagerPtr->save();
-
-        gettimeofday(&delete_time_end, NULL);
-        uint64_t single_delete_time_us = (delete_time_end.tv_sec - delete_time_start.tv_sec) * 1000000 + delete_time_end.tv_usec - delete_time_start.tv_usec;
-        printf("-----------------------Delete Statics----------------------\n");
-        printf("Delete time %d ms\n", single_delete_time_us/1000);
     }
-
-    
     return 0;
 }

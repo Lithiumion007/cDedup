@@ -9,13 +9,9 @@
 #include <zlib.h>
 #include "uthash.h"
 
-// init function
+// CDC
 void fastCDC_init(int fastcdc_avg_size, int NC_level);
-
-// origin fastcdc function
 int FastCDC_without_NC(unsigned char *p, int n);
-
-// normalized fastcdc
 int FastCDC_with_NC(unsigned char *p, int n);
 
 // FSC
@@ -23,5 +19,8 @@ int FSC_512(unsigned char *p, int n);
 int FSC_4(unsigned char *p, int n);
 int FSC_8(unsigned char *p, int n);
 int FSC_16(unsigned char *p, int n);
+
+// cloc
+int align_chunk_to_enterSymbol(unsigned char* p, int n, int original_chunk_size);
 
 #endif

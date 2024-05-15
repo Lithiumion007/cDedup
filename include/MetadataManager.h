@@ -26,8 +26,9 @@ struct ENTRY_VALUE {
     uint32_t offset;
     uint16_t chunk_length;
     uint16_t container_inner_index;
-    uint32_t ref_cnt;
-    uint32_t version;
+    uint32_t code_lines;
+    uint32_t comment_lines;
+    uint32_t blank_lines;
 };
 
 struct TupleHasher {
@@ -56,9 +57,8 @@ class MetadataManager {
         LookupResult dedupLookup(SHA1FP sha1, uint32_t, uint32_t, uint32_t);
         int addNewEntry(const SHA1FP sha1, const ENTRY_VALUE value);
         int addRefCnt(const SHA1FP sha1);
-        int decRefCnt(const SHA1FP sha1);
-        int chunkOffsetDec(SHA1FP sha1, int oft, int len);
         ENTRY_VALUE getEntry(const SHA1FP sha1);
+        ENTRY_VALUE getAddedEntry(const SHA1FP sha1);
 
     private:
         std::string metadata_file_path;
