@@ -22,5 +22,6 @@ int FSC_16(unsigned char *p, int n);
 
 // cloc
 int align_chunk_to_enterSymbol(unsigned char* p, int n, int original_chunk_size);
+int align_chunk_to_multilineEndDelimiter(unsigned char* p, int n, int original_chunk_size);
 
 #endif

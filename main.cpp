@@ -306,8 +306,11 @@ void writeFile(string path){
             chunk_length = chunking(file_cache + file_offset, n_read - file_offset);
 
             // Newline aware chunking
-            //chunk_length += align_chunk_to_enterSymbol(file_cache + file_offset, n_read - file_offset, chunk_length);
+            chunk_length += align_chunk_to_enterSymbol(file_cache + file_offset, n_read - file_offset, chunk_length);
             
+            // multiline aware chunking
+            chunk_length += align_chunk_to_multilineEndDelimiter(file_cache + file_offset, n_read - file_offset, chunk_length);
+
             // Hash
             memset(&sha1_fp, 0, sizeof(struct SHA1FP));
             SHA1(file_cache + file_offset, chunk_length, (uint8_t*)&sha1_fp);

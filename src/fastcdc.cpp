@@ -297,3 +297,40 @@ int isNewline(int k) {
 int align_chunk_to_enterSymbol(unsigned char* p, int n, int original_chunk_size) {
 	return align_chunk_by_condition(p, n, original_chunk_size, isNewline);
 }
+
+int align_chunk_to_multilineEndDelimiter(unsigned char* p, int n, int original_chunk_size){
+    // 先向前扫描，如果找到未匹配的start delimiter，那么就向后扫描，否则直接返回0代表无需对齐；
+    int scan_scope = 1024;
+    bool found_start = false;
+    unsigned char* scan = p;
+
+    int pos = original_chunk_size - scan_scope;
+    while(pos != (original_chunk_size-2)){
+        if(p[pos] == '/' && p[pos+1] == '*')
+        {
+            found_start = true;
+            break;
+        }
+        pos ++;
+    }
+    if(!found_start)
+        return 0;
+
+    // 已找到start delimiter，需要继续搜索end delimiter直到max chunk size
+    bool found_end = false;
+    p += original_chunk_size;
+	n -= original_chunk_size;
+	int boundary_skew = 0;
+
+	while(1) {
+        if(original_chunk_size + (boundary_skew+1) >= (MaxSize-1))break;
+		if((boundary_skew+1) >= (n-1))break; 
+        if(p[boundary_skew] == '*' && p[boundary_skew+1] == '/')break;
+
+		boundary_skew++;
+	}
+
+	boundary_skew += 2; 
+
+	return boundary_skew;
+}
