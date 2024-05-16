@@ -139,11 +139,8 @@ void saveContainer(int container_index, unsigned char* container_buf, unsigned i
     std::string container_name(containersPath);
     container_name.append("/container");
     container_name.append(std::to_string(container_index));
-    int fd = open(container_name.data(), O_RDWR | O_CREAT, 0777);
-    if(write(fd, container_buf, len) != len){
-        printf("saveContainer write error, id %d, %s\n", errno, strerror(errno));
-        exit(-1);
-    }
+    int fd = open(container_name.data(), O_RDWR | O_CREAT | O_DIRECT);
+    write(fd, container_buf, CONTAINER_SIZE);
     close(fd);
 }
 
@@ -254,13 +251,16 @@ void countLines(uint8_t *c, uint32_t length,
 }
 
 void writeFile(string path){
-    int idf = open(path.c_str(), O_RDONLY, 0777);
+    int idf = open(path.c_str(), O_RDONLY | O_DIRECT, 0777);
     if(idf < 0){
         printf("open file error, id %d, %s\n", errno, strerror(errno));
         exit(-1);
     }
 
-    unsigned char* file_cache = (unsigned char*)malloc(FILE_CACHE);
+    unsigned char* file_cache; 
+    posix_memalign((void**)&file_cache, 512, FILE_CACHE);
+
+
     struct SHA1FP sha1_fp;
     std::vector<std::string> file_recipe; // 保存这个文件所有块的指纹
 
@@ -270,7 +270,8 @@ void writeFile(string path){
     uint32_t chunk_length = 0;
     uint16_t container_inner_index = 0;
 
-    unsigned char container_buf[CONTAINER_SIZE]={0};
+    unsigned char* container_buf;
+    posix_memalign((void**)&container_buf, 512, CONTAINER_SIZE);
     unsigned int container_buf_pointer = 0;
     uint32_t file_offset = 0;
     uint32_t n_read = 0;
