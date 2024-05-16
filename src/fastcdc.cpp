@@ -300,11 +300,15 @@ int align_chunk_to_enterSymbol(unsigned char* p, int n, int original_chunk_size)
 
 int align_chunk_to_multilineEndDelimiter(unsigned char* p, int n, int original_chunk_size){
     // 先向前扫描，如果找到未匹配的start delimiter，那么就向后扫描，否则直接返回0代表无需对齐；
-    int scan_scope = 1024;
+    int scan_scope = 512;
     bool found_start = false;
     unsigned char* scan = p;
-
+    
     int pos = original_chunk_size - scan_scope;
+    if(original_chunk_size < scan_scope){
+        pos = original_chunk_size;
+    }
+
     while(pos != (original_chunk_size-2)){
         if(p[pos] == '/' && p[pos+1] == '*')
         {
@@ -331,6 +335,6 @@ int align_chunk_to_multilineEndDelimiter(unsigned char* p, int n, int original_c
 	}
 
 	boundary_skew += 2; 
-
+    
 	return boundary_skew;
 }
