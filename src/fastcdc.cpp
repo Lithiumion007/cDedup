@@ -302,20 +302,24 @@ int align_chunk_to_multilineEndDelimiter(unsigned char* p, int n, int original_c
     // 先向前扫描，如果找到未匹配的start delimiter，那么就向后扫描，否则直接返回0代表无需对齐；
     int scan_scope = 512;
     bool found_start = false;
-    unsigned char* scan = p;
     
-    int pos = original_chunk_size - scan_scope;
+    int pos = original_chunk_size - 1;
     if(original_chunk_size < scan_scope){
-        pos = original_chunk_size;
+        scan_scope = original_chunk_size;
     }
 
-    while(pos != (original_chunk_size-2)){
-        if(p[pos] == '/' && p[pos+1] == '*')
-        {
+    // 反向扫描
+    while(pos >= (original_chunk_size-scan_scope+1)){
+        if(p[pos-1] == '*' && p[pos] == '/'){
+            //如果提前遇到end delimiter，说明没有多行注释被分割，直接返回0就行； 
+            break;
+        }
+        
+        if(p[pos-1] == '/' && p[pos] == '*'){
             found_start = true;
             break;
         }
-        pos ++;
+        pos --;
     }
     if(!found_start)
         return 0;

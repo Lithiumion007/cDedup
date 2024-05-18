@@ -58,6 +58,10 @@ int cpp_file_num = 0;
 uint64_t global_code_line = 0;
 uint64_t global_blank_line = 0;
 uint64_t global_comment_line = 0;
+uint64_t LOC_time = 0;
+struct timeval LOC_time_start, LOC_time_end;
+uint64_t restore_size = 0;
+std::unordered_set<SHA1FP, TupleHasher, TupleEqualer> restore_LOC_set;
 
 uint32_t getFilesNum(const char* dirPath){
     int ans = 0;
@@ -260,7 +264,6 @@ void writeFile(string path){
     unsigned char* file_cache; 
     posix_memalign((void**)&file_cache, 512, FILE_CACHE);
 
-
     struct SHA1FP sha1_fp;
     std::vector<std::string> file_recipe; // 保存这个文件所有块的指纹
 
@@ -320,7 +323,11 @@ void writeFile(string path){
             LookupResult lookup_result;
             lookup_result = GlobalMetadataManagerPtr->dedupLookup(sha1_fp);
 
-            // 
+            // gettimeofday(&LOC_time_start, NULL);
+            // countLines(file_cache + file_offset, chunk_length, chunk_code_lines, chunk_comment_lines, chunk_blank_lines);
+            // gettimeofday(&LOC_time_end, NULL);
+            // LOC_time += (LOC_time_end.tv_sec - LOC_time_start.tv_sec) * 1000000 + 
+            //                             LOC_time_end.tv_usec - LOC_time_start.tv_usec;
             if(lookup_result == Unique){
                 // save chunk itself
                 saveChunkToContainer(container_buf_pointer, container_buf, 
@@ -329,9 +336,11 @@ void writeFile(string path){
                                     Config::getInstance().getContainersPath().c_str());
                 
                 // 唯一块需要扫描cloc
-                countLines(file_cache + file_offset, chunk_length, 
-                chunk_code_lines, chunk_comment_lines, chunk_blank_lines);
-
+                gettimeofday(&LOC_time_start, NULL);
+                countLines(file_cache + file_offset, chunk_length, chunk_code_lines, chunk_comment_lines, chunk_blank_lines);
+                gettimeofday(&LOC_time_end, NULL);
+                LOC_time += (LOC_time_end.tv_sec - LOC_time_start.tv_sec) * 1000000 + 
+                                         LOC_time_end.tv_usec - LOC_time_start.tv_usec;
                 // save chunk metadata
                 entry_value.container_number = container_index;
                 entry_value.offset = container_inner_offset;
@@ -482,6 +491,100 @@ void traverseCountDirectory(const fs::path& directory) {
     }
 }
 
+void restoreVersion(int version){
+    if(!fileRecipeExist(version, Config::getInstance().getFileRecipesPath().c_str())){
+        printf("Version %d not exist!\n", version);
+        return ;
+    }
+    
+    unsigned char* assembling_buffer = (unsigned char*)malloc(FILE_CACHE);
+    memset(assembling_buffer, 0, FILE_CACHE);
+    int write_buffer_offset = 0;
+
+    //recipe
+    std::vector<std::string> file_recipe = getFileRecipe(version,
+                                                            Config::getInstance().getFileRecipesPath().c_str());
+
+    //组装
+    if(Config::getInstance().getRestoreMethod() == CONTAINER_CACHE ||
+        Config::getInstance().getRestoreMethod() == CHUNK_CACHE){
+        int fd = open((Config::getInstance().getRestorePath() + to_string(version)).c_str(), O_RDWR | O_CREAT, 0777);
+        if(fd < 0){
+            printf("无法写文件!!! %s\n", strerror(errno));
+            exit(-1);
+        }
+
+        Cache* cc;
+        if(Config::getInstance().getRestoreMethod() == CONTAINER_CACHE){
+            cc = new ContainerCache(Config::getInstance().getContainersPath().c_str(), 32);
+        }else if(Config::getInstance().getRestoreMethod() == CHUNK_CACHE){
+            cc = new ChunkCache(Config::getInstance().getContainersPath().c_str(), 16*1024);
+        }
+
+        // code line
+        uint64_t chunk_code_lines = 0;
+        uint64_t chunk_comment_lines = 0;
+        uint64_t chunk_blank_lines = 0;
+        
+        for(auto &x : file_recipe){
+            SHA1FP fp;
+            memcpy(&fp, x.data(), sizeof(SHA1FP));
+            LookupResult res = GlobalMetadataManagerPtr->dedupLookup(fp);
+
+            if(res == Unique){
+                printf("Fatal error!!!\n");
+                exit(-1);
+            }
+
+            ENTRY_VALUE ev = GlobalMetadataManagerPtr->getEntry(fp);
+            std::string ck_data = cc->getChunkData(ev);
+
+            // DedupCloc
+            if(restore_LOC_set.find(fp) == restore_LOC_set.end()){
+                gettimeofday(&LOC_time_start, NULL);
+                countLines((uint8_t*)ck_data.data(), ck_data.size(), 
+                chunk_code_lines, chunk_comment_lines, chunk_blank_lines);
+                gettimeofday(&LOC_time_end, NULL);
+                LOC_time += (LOC_time_end.tv_sec - LOC_time_start.tv_sec) * 1000000 + 
+                                        LOC_time_end.tv_usec - LOC_time_start.tv_usec;
+                restore_LOC_set.insert(fp);
+            }
+
+            // // NaiveCloc
+            // gettimeofday(&LOC_time_start, NULL);
+            // countLines((uint8_t*)ck_data.data(), ck_data.size(), 
+            // chunk_code_lines, chunk_comment_lines, chunk_blank_lines);
+            // gettimeofday(&LOC_time_end, NULL);
+            // LOC_time += (LOC_time_end.tv_sec - LOC_time_start.tv_sec) * 1000000 + 
+            //                              LOC_time_end.tv_usec - LOC_time_start.tv_usec;
+
+            if(ck_data.size() != ev.chunk_length){
+                printf("Fatal error size different!!!\n");
+                exit(-1);
+            }
+
+            if(write_buffer_offset + ck_data.size() >= FILE_CACHE){
+                flushAssemblingBuffer(fd, assembling_buffer, write_buffer_offset);
+                write_buffer_offset = 0;
+            }
+
+            memcpy(assembling_buffer + write_buffer_offset, 
+                ck_data.data(), ck_data.size());
+            write_buffer_offset += ev.chunk_length;
+
+            restore_size += ev.chunk_length;
+        }
+
+        flushAssemblingBuffer(fd, assembling_buffer, write_buffer_offset);
+        close(fd);
+    }else{
+        printf("暂不支持的恢复算法 %d\n", Config::getInstance().getRestoreMethod());
+        exit(-1);
+    }
+
+    free(assembling_buffer);
+}
+
 int main(int argc, char** argv){
     // 超级权限
     setuid(0);
@@ -500,9 +603,6 @@ int main(int argc, char** argv){
             std::cerr << "Error: Input path does not exist." << std::endl;
             return 1;
         }
-
-        struct timeval backup_time_start, backup_time_end;
-        gettimeofday(&backup_time_start, NULL);
 
         if (!fs::is_directory(input_path)) {
             countFile(input_path);
@@ -549,6 +649,8 @@ int main(int argc, char** argv){
                                          backup_time_end.tv_usec - backup_time_start.tv_usec;
         float throughput = (float)(bj.sum_size) / MB / ((float)(single_dedup_time_us)/1000000);
 
+        float LOC_time_percetage = float(LOC_time) / (float)single_dedup_time_us * 100;
+
         // 写文件 - 重删统计
         printf("-----------------------Dedup statics----------------------\n");
         printf("Hash collision num %" PRIu64 "\n",    bj.hash_collision_sum); // should be zero
@@ -563,6 +665,7 @@ int main(int argc, char** argv){
         printf("Comment lines %" PRIu64 "\n",         bj.comment_lines);
         printf("Blank lines %" PRIu64 "\n",           bj.blank_lines);
         printf("-----------------------statics----------------------\n");
+        printf("LOC time percentage %.2f%\n", LOC_time_percetage);
         printf("Throughput %.2f MiB/s\n",    throughput);
         printf("Dedup Ratio %.2f%\n",     double(bj.dedup_size) / double(bj.sum_size) *100);
 
@@ -583,80 +686,17 @@ int main(int argc, char** argv){
 
         struct timeval restore_time_start, restore_time_end;
         gettimeofday(&restore_time_start, NULL);
-
-        int restore_size = 0;
-
-        if(!fileRecipeExist(Config::getInstance().getRestoreVersion(),
-                            Config::getInstance().getFileRecipesPath().c_str())){
-            printf("Version %d not exist!\n", Config::getInstance().getRestoreVersion());
-            return 0;
-        }
-        
-        unsigned char* assembling_buffer = (unsigned char*)malloc(FILE_CACHE);
-        memset(assembling_buffer, 0, FILE_CACHE);
-        int write_buffer_offset = 0;
-
-        //recipe
-        std::vector<std::string> file_recipe = getFileRecipe(Config::getInstance().getRestoreVersion(),
-                                                             Config::getInstance().getFileRecipesPath().c_str());
-
-        //组装
-        if(Config::getInstance().getRestoreMethod() == CONTAINER_CACHE ||
-           Config::getInstance().getRestoreMethod() == CHUNK_CACHE){
-            int fd = open(Config::getInstance().getRestorePath().c_str(), O_RDWR | O_CREAT, 0777);
-            if(fd < 0){
-                printf("无法写文件!!! %s\n", strerror(errno));
-                exit(-1);
-            }
-
-            Cache* cc;
-            if(Config::getInstance().getRestoreMethod() == CONTAINER_CACHE){
-                cc = new ContainerCache(Config::getInstance().getContainersPath().c_str(), 128);
-            }else if(Config::getInstance().getRestoreMethod() == CHUNK_CACHE){
-                cc = new ChunkCache(Config::getInstance().getContainersPath().c_str(), 16*1024);
-            }
-            
-            for(auto &x : file_recipe){
-                SHA1FP fp;
-                memcpy(&fp, x.data(), sizeof(SHA1FP));
-                LookupResult res = GlobalMetadataManagerPtr->dedupLookup(fp);
-
-                if(res == Unique){
-                    printf("Fatal error!!!\n");
-                    exit(-1);
-                }
-
-                ENTRY_VALUE ev = GlobalMetadataManagerPtr->getEntry(fp);
-                std::string ck_data = cc->getChunkData(ev);
-                if(ck_data.size() != ev.chunk_length){
-                    printf("Fatal error size different!!!\n");
-                    exit(-1);
-                }
-
-                if(write_buffer_offset + ck_data.size() >= FILE_CACHE){
-                    flushAssemblingBuffer(fd, assembling_buffer, write_buffer_offset);
-                    write_buffer_offset = 0;
-                }
-
-                memcpy(assembling_buffer + write_buffer_offset, 
-                    ck_data.data(), ck_data.size());
-                write_buffer_offset += ev.chunk_length;
-
-                restore_size += ev.chunk_length;
-            }
-
-            flushAssemblingBuffer(fd, assembling_buffer, write_buffer_offset);
-            close(fd);
-        }else{
-            printf("暂不支持的恢复算法 %d\n", Config::getInstance().getRestoreMethod());
-            exit(-1);
-        }
-
+        for(int i=0; i<=9; i++)
+            restoreVersion(i);
         gettimeofday(&restore_time_end, NULL);
+
         uint64_t single_dedup_time_us = (restore_time_end.tv_sec - restore_time_start.tv_sec) * 1000000 + restore_time_end.tv_usec - restore_time_start.tv_usec;
         float restore_throughput = (float)(restore_size) / MB / ((float)(single_dedup_time_us)/1000000);
+        float LOC_time_percetage = float(LOC_time) / (float)single_dedup_time_us * 100; 
+
         printf("-----------------------Restore statics----------------------\n");
-        printf("Restore size %d\n", restore_size);
+        printf("LOC time percentage %.2f%\n", LOC_time_percetage);
+        printf("Restore size %lld\n", restore_size);
         printf("Restore Throughput %.2f MiB/s\n", restore_throughput);
 
     }
