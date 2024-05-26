@@ -16,11 +16,9 @@ enum TASK_TYPE{
 enum CHUNKING_METHOD{
     CDC,
     FSC,
-    FULL_FILE
 };
 
-enum RESTORE_METHOD{
-    NAIVE_RESTORE,  //无缓冲模式   
+enum RESTORE_METHOD{  
     CONTAINER_CACHE,//基于容器的缓冲
     CHUNK_CACHE,    //基于数据块的缓冲
     FAA_FIXED,      //一次性发送FAA
@@ -34,7 +32,7 @@ class Config{
           return instance;
         }
 
-        // getters
+        // Getters
         enum TASK_TYPE getTaskType(){return this->tt;}
         string getInputPath(){return this->input_path;}
         string getRestorePath(){return this->restore_path;}
@@ -44,28 +42,20 @@ class Config{
         int getDeleteId(){return this->delete_id;}
         int getAvgChunkSize(){return this->avg_chunk_size;}
         int getNormalLevel(){return this->normal_level;}
-        bool getMerkleTree(){return this->merkle_tree;}
         enum RESTORE_METHOD getRestoreMethod(){return this->rm;}
 
         string getFpDeltaDedupFolderPath(){return this->fp_DeltaDedup_folder_path;}
         string getFingerprintsFilePath(){return this->fingerprints_file_path;}
         string getFileRecipesPath(){return this->file_recipe_path;}        
         string getContainersPath(){return this->container_path;}     
-        string getFullFileFingerprintsPath(){return this->full_file_fingerprints_path;}        
-        string getFullFileStoragePath(){return this->full_file_storage_path;}
-
-        string getMTL1(){return this->MTL1;}
-        string getMTL2(){return this->MTL2;}
-        string getMTL3(){return this->MTL3;}
-        string getMTL4(){return this->MTL4;}
-        string getMTL5(){return this->MTL5;}
-        string getMTL6(){return this->MTL6;}
+        string getBaseContainersPath(){return this->base_container_path;}     
+        string getDeltaContainersPath(){return this->delta_container_path;}     
 
         bool isDeltaDedup(){return this->b_DeltaDedup;}
         int getBaseSize(){return this->base_size;}
         int getDeltaNum(){return this->delta_num;}
 
-        // setters
+        // Setters
         void setTask(char* s){this->tt = taskTypeTrans(s);}
         void setInputFile(char* s){this->input_path = s;}
         void setRestorePath(char* s){this->restore_path = s;}
@@ -75,22 +65,14 @@ class Config{
         void setDeleteId(int n){this->delete_id = n;}
         void setSize(int n){this->avg_chunk_size = n;}
         void setNormal(int n){this->normal_level = n;}
-        void setMerkleTree(char* s){this->merkle_tree = yesNoTrans(s);}
         void setRestoreMethod(char* s){this->rm = restoreMethodTrans(s);}
 
         void setFpDeltaDedupFolder(char* s){this->fp_DeltaDedup_folder_path = s;}
         void setFingerprintsFilePath(char* s){this->fingerprints_file_path = s;}
         void setFileRecipesPath(char* s){this->file_recipe_path = s;}        
         void setContainersPath(char* s){this->container_path = s;}     
-        void setFullFileFingerprintsPath(char* s){this->full_file_fingerprints_path = s;}        
-        void setFullFileStoragePath(char* s){this->full_file_storage_path = s;}
-
-        void setMTL1(char* s){this->MTL1 = s;}
-        void setMTL2(char* s){this->MTL2 = s;}
-        void setMTL3(char* s){this->MTL3 = s;}
-        void setMTL4(char* s){this->MTL4 = s;}
-        void setMTL5(char* s){this->MTL5 = s;}
-        void setMTL6(char* s){this->MTL6 = s;}
+        void setBaseContainersPath(char* s){this->base_container_path = s;}
+        void setDeltaContainersPath(char* s){this->delta_container_path = s;}
 
         void setDeltaDedup(char* s){this->b_DeltaDedup = yesNoTrans(s);}
         void setBaseSize(int n){this->base_size = n;};
@@ -139,8 +121,6 @@ class Config{
                     Config::getInstance().setSize(val_int);
                 }else if (strcmp(name, "Normal") == 0) {
                     Config::getInstance().setNormal(val_int);
-                }else if (strcmp(name, "MerkleTree") == 0) {
-                    Config::getInstance().setMerkleTree(valuestring);
                 }else if (strcmp(name, "RestoreMethod") == 0) {
                     Config::getInstance().setRestoreMethod(valuestring);
                 }
@@ -153,25 +133,11 @@ class Config{
                     Config::getInstance().setFileRecipesPath(valuestring);
                 } else if (strcmp(name, "containersPath") == 0) {
                     Config::getInstance().setContainersPath(valuestring);
-                } else if (strcmp(name, "fullFileFingerprintsPath") == 0) {
-                    Config::getInstance().setFullFileFingerprintsPath(valuestring);
-                } else if (strcmp(name, "fullFileStoragePath") == 0) {
-                    Config::getInstance().setFullFileStoragePath(valuestring);
+                } else if (strcmp(name, "baseContainersPath") == 0) {
+                    Config::getInstance().setBaseContainersPath(valuestring);
+                } else if (strcmp(name, "deltaContainersPath") == 0) {
+                    Config::getInstance().setDeltaContainersPath(valuestring);
                 }
-                else if (strcmp(name, "MTL1") == 0) {
-                    Config::getInstance().setMTL1(valuestring);
-                }else if (strcmp(name, "MTL2") == 0) {
-                    Config::getInstance().setMTL2(valuestring);
-                }else if (strcmp(name, "MTL3") == 0) {
-                    Config::getInstance().setMTL3(valuestring);
-                }else if (strcmp(name, "MTL4") == 0) {
-                    Config::getInstance().setMTL4(valuestring);
-                }else if (strcmp(name, "MTL5") == 0) {
-                    Config::getInstance().setMTL5(valuestring);
-                }else if (strcmp(name, "MTL6") == 0) {
-                    Config::getInstance().setMTL6(valuestring);
-                }
-
                 else if (strcmp(name, "DeltaDedup") == 0) {
                     Config::getInstance().setDeltaDedup(valuestring);
                 }else if (strcmp(name, "base_size") == 0) {
@@ -194,16 +160,14 @@ class Config{
         int delete_id;
         int avg_chunk_size;     // unit KiB
         int normal_level;
-        bool merkle_tree;
 
         // 元数据相关参数
         string fp_DeltaDedup_folder_path;
         string fingerprints_file_path; // 也可用作merkle tree L0
         string file_recipe_path;
         string container_path;
-        string full_file_fingerprints_path;
-        string full_file_storage_path;
-        string MTL1, MTL2, MTL3, MTL4, MTL5, MTL6;
+        string base_container_path;
+        string delta_container_path;
 
         //打桩重删参数
         bool b_DeltaDedup;
@@ -213,7 +177,6 @@ class Config{
         Config() {
             avg_chunk_size = 4096;
             normal_level = 2;
-            merkle_tree = false;
         }
 
         enum TASK_TYPE taskTypeTrans(char* s){
@@ -236,8 +199,6 @@ class Config{
                 return CDC;
             }else if (strcmp(s, "fsc") == 0){
                 return FSC;
-            }else if (strcmp(s, "file") == 0){
-                return FULL_FILE;
             }else{
                 printf("Not support chunking method type:%s\n", s);
                 exit(-1);
@@ -256,9 +217,7 @@ class Config{
         }
 
         RESTORE_METHOD restoreMethodTrans(char* s){
-            if(strcmp(s, "naive") == 0){
-                return NAIVE_RESTORE;
-            }else if (strcmp(s, "container") == 0){
+            if (strcmp(s, "container") == 0){
                 return CONTAINER_CACHE;
             }else if (strcmp(s, "chunk") == 0){
                 return CHUNK_CACHE;
