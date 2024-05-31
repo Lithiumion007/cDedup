@@ -65,6 +65,8 @@ class Config{
         int getPilingNum(){return this->piling_num;}
         int getChainNum(){return this->chain_num;}
 
+        int getBackwardScanScope(){return this->backward_scan_scope;}
+
         // setters
         void setTask(char* s){this->tt = taskTypeTrans(s);}
         void setInputFile(char* s){this->input_path = s;}
@@ -94,6 +96,8 @@ class Config{
         void setPiling(char* s){this->piling = yesNoTrans(s);}
         void setPilingNum(int n){this->piling_num = n;};
         void setChainNum(int n){this->chain_num = n;};
+
+        void setBackwardScanScope(int n){this->backward_scan_scope = n;}
 
         // you know
         void parse_argument(int argc, char **argv)
@@ -176,6 +180,11 @@ class Config{
                 }else if (strcmp(name, "chain_num") == 0) {
                     Config::getInstance().setChainNum(val_int);
                 }
+
+                // cloc
+                else if(strcmp(name, "BackwardScanScope") == 0) {
+                    Config::getInstance().setBackwardScanScope(val_int);
+                }
             }
         }
 
@@ -205,6 +214,9 @@ class Config{
         bool piling;
         int piling_num;
         int chain_num;
+
+        // cloc
+        int backward_scan_scope;
 
         Config() {
             avg_chunk_size = 4096;

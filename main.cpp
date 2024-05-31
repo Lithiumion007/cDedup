@@ -294,6 +294,8 @@ void writeFile(string path){
     uint64_t chunk_code_lines = 0;
     uint64_t chunk_comment_lines = 0;
     uint64_t chunk_blank_lines = 0;
+
+    int scan_scope = Config::getInstance().getBackwardScanScope();
     
     // 普通分块重删，来一个块查寻一次，然后把non-duplicate chunk保存到container去
     for(;;){
@@ -313,7 +315,7 @@ void writeFile(string path){
             chunk_length += align_chunk_to_enterSymbol(file_cache + file_offset, n_read - file_offset, chunk_length);
             
             // multiline aware chunking
-            chunk_length += align_chunk_to_multilineEndDelimiter(file_cache + file_offset, n_read - file_offset, chunk_length);
+            chunk_length += align_chunk_to_multilineEndDelimiter(file_cache + file_offset, n_read - file_offset, chunk_length, scan_scope);
 
             // Hash
             memset(&sha1_fp, 0, sizeof(struct SHA1FP));

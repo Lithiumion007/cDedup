@@ -1,4 +1,5 @@
 #include "fastcdc.h"
+#include "config.h"
 
 // predefined Gear Mask
 uint64_t GEARv2[256] = {
@@ -298,9 +299,8 @@ int align_chunk_to_enterSymbol(unsigned char* p, int n, int original_chunk_size)
 	return align_chunk_by_condition(p, n, original_chunk_size, isNewline);
 }
 
-int align_chunk_to_multilineEndDelimiter(unsigned char* p, int n, int original_chunk_size){
+int align_chunk_to_multilineEndDelimiter(unsigned char* p, int n, int original_chunk_size, int scan_scope){
     // 先向前扫描，如果找到未匹配的start delimiter，那么就向后扫描，否则直接返回0代表无需对齐；
-    int scan_scope = 512;
     bool found_start = false;
     
     int pos = original_chunk_size - 1;
@@ -333,7 +333,10 @@ int align_chunk_to_multilineEndDelimiter(unsigned char* p, int n, int original_c
 	while(1) {
         if(original_chunk_size + (boundary_skew+1) >= (MaxSize-1))break;
 		if((boundary_skew+1) >= (n-1))break; 
-        if(p[boundary_skew] == '*' && p[boundary_skew+1] == '/')break;
+        if(p[boundary_skew] == '*' && p[boundary_skew+1] == '/'){
+            found_end;
+            break;
+        }
 
 		boundary_skew++;
 	}
