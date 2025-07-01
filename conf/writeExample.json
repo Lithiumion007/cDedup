@@ -3,6 +3,7 @@
   "InputFile": "/home/cyf/ssd0/cloc/codeLEVELDB",
   "ChunkingMethod": "cdc",
   "Size": 4096,
+  "BackwardScanScope":512,
   "Normal": 2,
   "MerkleTree": "no",
   "containersPath": "/home/cyf/ssd1/working2/Containers",

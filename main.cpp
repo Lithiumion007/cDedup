@@ -310,10 +310,10 @@ void writeFile(string path){
             chunk_length = chunking(file_cache + file_offset, n_read - file_offset);
 
             // Newline aware chunking
-            chunk_length += align_chunk_to_enterSymbol(file_cache + file_offset, n_read - file_offset, chunk_length);
+            //chunk_length += align_chunk_to_enterSymbol(file_cache + file_offset, n_read - file_offset, chunk_length);
             
             // multiline aware chunking
-            chunk_length += align_chunk_to_multilineEndDelimiter(file_cache + file_offset, n_read - file_offset, chunk_length, scan_scope);
+            //chunk_length += align_chunk_to_multilineEndDelimiter(file_cache + file_offset, n_read - file_offset, chunk_length, scan_scope);
 
             // Hash
             memset(&sha1_fp, 0, sizeof(struct SHA1FP));
@@ -323,11 +323,11 @@ void writeFile(string path){
             LookupResult lookup_result;
             lookup_result = GlobalMetadataManagerPtr->dedupLookup(sha1_fp);
 
-            // gettimeofday(&LOC_time_start, NULL);
-            // countLines(file_cache + file_offset, chunk_length, chunk_code_lines, chunk_comment_lines, chunk_blank_lines);
-            // gettimeofday(&LOC_time_end, NULL);
-            // LOC_time += (LOC_time_end.tv_sec - LOC_time_start.tv_sec) * 1000000 + 
-            //                             LOC_time_end.tv_usec - LOC_time_start.tv_usec;
+            gettimeofday(&LOC_time_start, NULL);
+            countLines(file_cache + file_offset, chunk_length, chunk_code_lines, chunk_comment_lines, chunk_blank_lines);
+            gettimeofday(&LOC_time_end, NULL);
+            LOC_time += (LOC_time_end.tv_sec - LOC_time_start.tv_sec) * 1000000 + 
+                                        LOC_time_end.tv_usec - LOC_time_start.tv_usec;
             if(lookup_result == Unique){
                 // save chunk itself
                 saveChunkToContainer(container_buf_pointer, container_buf, 
@@ -336,11 +336,11 @@ void writeFile(string path){
                                     Config::getInstance().getContainersPath().c_str());
                 
                 // 唯一块需要扫描cloc
-                gettimeofday(&LOC_time_start, NULL);
-                countLines(file_cache + file_offset, chunk_length, chunk_code_lines, chunk_comment_lines, chunk_blank_lines);
-                gettimeofday(&LOC_time_end, NULL);
-                LOC_time += (LOC_time_end.tv_sec - LOC_time_start.tv_sec) * 1000000 + 
-                                         LOC_time_end.tv_usec - LOC_time_start.tv_usec;
+                // gettimeofday(&LOC_time_start, NULL);
+                // countLines(file_cache + file_offset, chunk_length, chunk_code_lines, chunk_comment_lines, chunk_blank_lines);
+                // gettimeofday(&LOC_time_end, NULL);
+                // LOC_time += (LOC_time_end.tv_sec - LOC_time_start.tv_sec) * 1000000 + 
+                //                          LOC_time_end.tv_usec - LOC_time_start.tv_usec;
                 // save chunk metadata
                 entry_value.container_number = container_index;
                 entry_value.offset = container_inner_offset;
