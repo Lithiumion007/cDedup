@@ -17,7 +17,6 @@
 
 #include "fastcdc.h"
 #include "full_file_deduplicater.h"
-#include "merkle_tree.h"
 #include "MetadataManager.h"
 #include "ContainerCache.h"
 #include "ChunkCache.h"
@@ -28,7 +27,6 @@
 #include "compressor.h"
 #include "global_stat.h"
 #include "jcr.h"
-#include "pipeline.h"
 
 #define MB (1024*1024)
 #define GB (1024*1024*1024)

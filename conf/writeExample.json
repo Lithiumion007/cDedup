@@ -1,15 +1,11 @@
 {
   "Task": "write",
-  "InputFile": "/home/cyf/hikvision/hdd1/linuxVersion/linux-5.10.100.tar",
+  "InputFile": "/home/cyf/ssd0/cloc/codeLEVELDB",
   "ChunkingMethod": "cdc",
   "Size": 4096,
   "Normal": 2,
   "MerkleTree": "no",
-  "containersPath": "/home/cyf/hikvision/ssd1/working/Containers",
-  "fileRecipesPath": "/home/cyf/hikvision/ssd1/working/metadata/FileRecipes",
-  "fingerprintsFilePath": "/home/cyf/hikvision/ssd1/working/metadata/fingerprints.meta",
-
-  "piling":"yes",
-  "piling_num":2, 
-  "chain_num":10
+  "containersPath": "/home/cyf/ssd1/working2/Containers",
+  "fileRecipesPath": "/home/cyf/ssd1/working2/metadata/FileRecipes",
+  "fingerprintsFilePath": "/home/cyf/ssd1/working2/metadata/fingerprints.meta"
 }
