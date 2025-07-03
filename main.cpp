@@ -51,6 +51,7 @@ extern MetadataManager *GlobalMetadataManagerPtr;
 struct backup_job bj;
 int (*chunking) (unsigned char*p, int n);
 int cpp_file_num = 0;
+int py_file_num = 0;
 
 // used for normal count
 uint64_t global_code_line = 0;
@@ -252,6 +253,67 @@ void countLines(uint8_t *c, uint32_t length,
     }
 }
 
+void countLinesPython(uint8_t *c, uint32_t length,
+                uint64_t& code_lines, uint64_t& comment_lines, uint64_t& blank_lines) {
+    int single_comment_delimiter_size_python = 1;
+    int multi_comment_delimiter_size_python = 3;
+
+    enum { CODE, BLOCK_COMMENT, LINE_COMMENT } state = CODE;
+    bool line_first_char = true;
+
+    for (size_t i = 0; i < length; i++) {
+        unsigned char currentChar = c[i];
+        unsigned char nextChar = (i < length - 1) ? c[i + 1] : '\0';
+        unsigned char nextNextChar = (i < length - 2) ? c[i + 2] : '\0';
+
+        if (state == CODE) {
+            if (currentChar == '\'' && nextChar == '\'' && nextChar == '\'') {
+                state = BLOCK_COMMENT;
+                line_first_char = false;
+                i+=multi_comment_delimiter_size_python;
+            }else if (currentChar == '\"' && nextChar == '\"' && nextChar == '\"') {
+                state = BLOCK_COMMENT;
+                line_first_char = false;
+                i+=multi_comment_delimiter_size_python;
+            }else if (currentChar == '#') {
+                state = LINE_COMMENT;
+                line_first_char = false;
+                i+=single_comment_delimiter_size_python;
+                comment_lines++;
+            } else if (currentChar == '\n') {
+                if(line_first_char)
+                    blank_lines ++;
+                else
+                    code_lines++;
+                line_first_char = true;
+            }else{
+                line_first_char = false;
+            }
+        } else if (state == BLOCK_COMMENT) {
+            if (currentChar == '\'' && nextChar == '\'' && nextChar == '\'') {
+                state = CODE;
+                line_first_char = false;
+                i+=multi_comment_delimiter_size_python;
+                comment_lines++;
+            }else if (currentChar == '\"' && nextChar == '\"' && nextChar == '\"') {
+                state = CODE;
+                line_first_char = false;
+                i+=multi_comment_delimiter_size_python;
+                comment_lines++;
+            }else if (currentChar == '\n') {
+                line_first_char = true;
+                comment_lines++;
+            }
+        } else if (state == LINE_COMMENT) {
+            if (currentChar == '\n') {
+                line_first_char = true;
+                state = CODE;
+                comment_lines++;
+            }
+        }
+    }
+}
+
 void writeFile(string path){
     int idf = open(path.c_str(), O_RDONLY | O_DIRECT, 0777);
     if(idf < 0){
@@ -310,10 +372,10 @@ void writeFile(string path){
             chunk_length = chunking(file_cache + file_offset, n_read - file_offset);
 
             // Newline aware chunking
-            //chunk_length += align_chunk_to_enterSymbol(file_cache + file_offset, n_read - file_offset, chunk_length);
+            chunk_length += align_chunk_to_enterSymbol(file_cache + file_offset, n_read - file_offset, chunk_length);
             
             // multiline aware chunking
-            //chunk_length += align_chunk_to_multilineEndDelimiter(file_cache + file_offset, n_read - file_offset, chunk_length, scan_scope);
+            chunk_length += align_chunk_to_multilineEndDelimiter(file_cache + file_offset, n_read - file_offset, chunk_length, scan_scope);
 
             // Hash
             memset(&sha1_fp, 0, sizeof(struct SHA1FP));
@@ -323,11 +385,11 @@ void writeFile(string path){
             LookupResult lookup_result;
             lookup_result = GlobalMetadataManagerPtr->dedupLookup(sha1_fp);
 
-            gettimeofday(&LOC_time_start, NULL);
-            countLines(file_cache + file_offset, chunk_length, chunk_code_lines, chunk_comment_lines, chunk_blank_lines);
-            gettimeofday(&LOC_time_end, NULL);
-            LOC_time += (LOC_time_end.tv_sec - LOC_time_start.tv_sec) * 1000000 + 
-                                        LOC_time_end.tv_usec - LOC_time_start.tv_usec;
+            // gettimeofday(&LOC_time_start, NULL);
+            // countLines(file_cache + file_offset, chunk_length, chunk_code_lines, chunk_comment_lines, chunk_blank_lines);
+            // gettimeofday(&LOC_time_end, NULL);
+            // LOC_time += (LOC_time_end.tv_sec - LOC_time_start.tv_sec) * 1000000 + 
+            //                             LOC_time_end.tv_usec - LOC_time_start.tv_usec;
             if(lookup_result == Unique){
                 // save chunk itself
                 saveChunkToContainer(container_buf_pointer, container_buf, 
@@ -336,11 +398,11 @@ void writeFile(string path){
                                     Config::getInstance().getContainersPath().c_str());
                 
                 // 唯一块需要扫描cloc
-                // gettimeofday(&LOC_time_start, NULL);
-                // countLines(file_cache + file_offset, chunk_length, chunk_code_lines, chunk_comment_lines, chunk_blank_lines);
-                // gettimeofday(&LOC_time_end, NULL);
-                // LOC_time += (LOC_time_end.tv_sec - LOC_time_start.tv_sec) * 1000000 + 
-                //                          LOC_time_end.tv_usec - LOC_time_start.tv_usec;
+                gettimeofday(&LOC_time_start, NULL);
+                countLines(file_cache + file_offset, chunk_length, chunk_code_lines, chunk_comment_lines, chunk_blank_lines);
+                gettimeofday(&LOC_time_end, NULL);
+                LOC_time += (LOC_time_end.tv_sec - LOC_time_start.tv_sec) * 1000000 + 
+                                         LOC_time_end.tv_usec - LOC_time_start.tv_usec;
                 // save chunk metadata
                 entry_value.container_number = container_index;
                 entry_value.offset = container_inner_offset;
@@ -430,6 +492,11 @@ std::vector<fs::path> traverseDirectory(const fs::path& directory) {
                 std::string extension = getExtension(entry.path().string());
                 if(extension == "cpp" || extension == "cc" || extension == "c"){
                     cpp_file_num ++;
+                    files.push_back(entry.path());
+                }
+
+                if(extension == "py"){
+                    py_file_num ++;
                     files.push_back(entry.path());
                 }
                     
@@ -612,6 +679,7 @@ int main(int argc, char** argv){
 
         printf("-----------------------Code line statics----------------------\n");
         printf("CPP files num %d\n", cpp_file_num);
+        printf("PY files num %d\n", py_file_num);
         printf("Code lines %" PRIu64 "\n",            global_code_line);
         printf("Comment lines %" PRIu64 "\n",         global_comment_line);
         printf("Blank lines %" PRIu64 "\n",           global_blank_line);
@@ -661,6 +729,7 @@ int main(int argc, char** argv){
         printf("Dedup data size %" PRIu64 "\n",       bj.dedup_size);
         printf("-----------------------Code line statics----------------------\n");
         printf("CPP files num %d\n", cpp_file_num);
+        printf("PY files num %d\n", py_file_num);
         printf("Code lines %" PRIu64 "\n",            bj.code_lines);
         printf("Comment lines %" PRIu64 "\n",         bj.comment_lines);
         printf("Blank lines %" PRIu64 "\n",           bj.blank_lines);
