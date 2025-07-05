@@ -28,6 +28,19 @@ enum RESTORE_METHOD{
     FAA_ROLLING,    //FAA环形缓冲区
 };
 
+enum LANG{
+    LANG_PYTHON = 0,
+    LANG_CPP,
+    LANG_C,
+    LANG_JAVA,
+    LANG_CSHARP,
+    LANG_JAVASCRIPT,
+    LANG_GO,
+    LANG_VB,
+    LANG_DELPHI,
+    LANG_FORTRAN
+};
+
 class Config{
     public:
         static Config& getInstance() {
@@ -45,27 +58,14 @@ class Config{
         int getDeleteId(){return this->delete_id;}
         int getAvgChunkSize(){return this->avg_chunk_size;}
         int getNormalLevel(){return this->normal_level;}
-        bool getMerkleTree(){return this->merkle_tree;}
         enum RESTORE_METHOD getRestoreMethod(){return this->rm;}
 
         string getFingerprintsFilePath(){return this->fingerprints_file_path;}
         string getFileRecipesPath(){return this->file_recipe_path;}        
         string getContainersPath(){return this->container_path;}     
-        string getFullFileFingerprintsPath(){return this->full_file_fingerprints_path;}        
-        string getFullFileStoragePath(){return this->full_file_storage_path;}
-
-        string getMTL1(){return this->MTL1;}
-        string getMTL2(){return this->MTL2;}
-        string getMTL3(){return this->MTL3;}
-        string getMTL4(){return this->MTL4;}
-        string getMTL5(){return this->MTL5;}
-        string getMTL6(){return this->MTL6;}
-
-        bool isPiling(){return this->piling;}
-        int getPilingNum(){return this->piling_num;}
-        int getChainNum(){return this->chain_num;}
 
         int getBackwardScanScope(){return this->backward_scan_scope;}
+        enum LANG getLanugage(){return this->language;}
 
         // setters
         void setTask(char* s){this->tt = taskTypeTrans(s);}
@@ -77,27 +77,14 @@ class Config{
         void setDeleteId(int n){this->delete_id = n;}
         void setSize(int n){this->avg_chunk_size = n;}
         void setNormal(int n){this->normal_level = n;}
-        void setMerkleTree(char* s){this->merkle_tree = yesNoTrans(s);}
         void setRestoreMethod(char* s){this->rm = restoreMethodTrans(s);}
 
         void setFingerprintsFilePath(char* s){this->fingerprints_file_path = s;}
         void setFileRecipesPath(char* s){this->file_recipe_path = s;}        
         void setContainersPath(char* s){this->container_path = s;}     
-        void setFullFileFingerprintsPath(char* s){this->full_file_fingerprints_path = s;}        
-        void setFullFileStoragePath(char* s){this->full_file_storage_path = s;}
-
-        void setMTL1(char* s){this->MTL1 = s;}
-        void setMTL2(char* s){this->MTL2 = s;}
-        void setMTL3(char* s){this->MTL3 = s;}
-        void setMTL4(char* s){this->MTL4 = s;}
-        void setMTL5(char* s){this->MTL5 = s;}
-        void setMTL6(char* s){this->MTL6 = s;}
-
-        void setPiling(char* s){this->piling = yesNoTrans(s);}
-        void setPilingNum(int n){this->piling_num = n;};
-        void setChainNum(int n){this->chain_num = n;};
 
         void setBackwardScanScope(int n){this->backward_scan_scope = n;}
+        void setLanguage(char* s){this->language = languageTrans(s);}
 
         // you know
         void parse_argument(int argc, char **argv)
@@ -142,8 +129,6 @@ class Config{
                     Config::getInstance().setSize(val_int);
                 }else if (strcmp(name, "Normal") == 0) {
                     Config::getInstance().setNormal(val_int);
-                }else if (strcmp(name, "MerkleTree") == 0) {
-                    Config::getInstance().setMerkleTree(valuestring);
                 }else if (strcmp(name, "RestoreMethod") == 0) {
                     Config::getInstance().setRestoreMethod(valuestring);
                 }
@@ -154,36 +139,13 @@ class Config{
                     Config::getInstance().setFileRecipesPath(valuestring);
                 } else if (strcmp(name, "containersPath") == 0) {
                     Config::getInstance().setContainersPath(valuestring);
-                } else if (strcmp(name, "fullFileFingerprintsPath") == 0) {
-                    Config::getInstance().setFullFileFingerprintsPath(valuestring);
-                } else if (strcmp(name, "fullFileStoragePath") == 0) {
-                    Config::getInstance().setFullFileStoragePath(valuestring);
-                }
-                else if (strcmp(name, "MTL1") == 0) {
-                    Config::getInstance().setMTL1(valuestring);
-                }else if (strcmp(name, "MTL2") == 0) {
-                    Config::getInstance().setMTL2(valuestring);
-                }else if (strcmp(name, "MTL3") == 0) {
-                    Config::getInstance().setMTL3(valuestring);
-                }else if (strcmp(name, "MTL4") == 0) {
-                    Config::getInstance().setMTL4(valuestring);
-                }else if (strcmp(name, "MTL5") == 0) {
-                    Config::getInstance().setMTL5(valuestring);
-                }else if (strcmp(name, "MTL6") == 0) {
-                    Config::getInstance().setMTL6(valuestring);
-                }
-
-                else if (strcmp(name, "piling") == 0) {
-                    Config::getInstance().setPiling(valuestring);
-                }else if (strcmp(name, "piling_num") == 0) {
-                    Config::getInstance().setPilingNum(val_int);
-                }else if (strcmp(name, "chain_num") == 0) {
-                    Config::getInstance().setChainNum(val_int);
                 }
 
                 // cloc
                 else if(strcmp(name, "BackwardScanScope") == 0) {
                     Config::getInstance().setBackwardScanScope(val_int);
+                } else if(strcmp(name, "language") == 0) {
+                    Config::getInstance().setLanguage(valuestring);
                 }
             }
         }
@@ -200,28 +162,19 @@ class Config{
         int delete_id;
         int avg_chunk_size;     // unit KiB
         int normal_level;
-        bool merkle_tree;
 
         // 元数据相关参数
         string fingerprints_file_path; // 也可用作merkle tree L0
         string file_recipe_path;
         string container_path;
-        string full_file_fingerprints_path;
-        string full_file_storage_path;
-        string MTL1, MTL2, MTL3, MTL4, MTL5, MTL6;
-
-        //打桩重删参数
-        bool piling;
-        int piling_num;
-        int chain_num;
 
         // cloc
         int backward_scan_scope;
+        enum LANG language;
 
         Config() {
             avg_chunk_size = 4096;
             normal_level = 2;
-            merkle_tree = false;
         }
 
         enum TASK_TYPE taskTypeTrans(char* s){
@@ -263,6 +216,30 @@ class Config{
                 printf("Not support yes no type:%s\n", s);
                 exit(-1);
             }
+        }
+
+        enum LANG languageTrans(char* s){
+            if(strcmp(s, "python") == 0){
+                return LANG_PYTHON;
+            } else if (strcmp(s, "c++") == 0){
+                return LANG_CPP;
+            } else if (strcmp(s, "c") == 0){
+                return LANG_C;
+            } else if (strcmp(s, "java") == 0){
+                return LANG_JAVA;
+            } else if (strcmp(s, "c#") == 0){
+                return LANG_CSHARP;
+            } else if (strcmp(s, "javascript") == 0){
+                return LANG_JAVASCRIPT;
+            } else if (strcmp(s, "go") == 0){
+                return LANG_GO;
+            } else if (strcmp(s, "visual basic") == 0){
+                return LANG_VB;
+            } else if (strcmp(s, "delphi") == 0){
+                return LANG_DELPHI;
+            } else if (strcmp(s, "fortran") == 0){
+                return LANG_FORTRAN;
+            }   
         }
 
         RESTORE_METHOD restoreMethodTrans(char* s){

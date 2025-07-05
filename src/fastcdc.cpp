@@ -274,6 +274,10 @@ int FSC_16(unsigned char *p, int n) {
     return n;
 }
 
+/*
+CLOC
+*/
+
 int align_chunk_by_condition(unsigned char *p, int n, int original_chunk_size, int(*condition_func)(int)) {
 	p += original_chunk_size;
 	n -= original_chunk_size;
@@ -299,28 +303,86 @@ int align_chunk_to_enterSymbol(unsigned char* p, int n, int original_chunk_size)
 	return align_chunk_by_condition(p, n, original_chunk_size, isNewline);
 }
 
-int align_chunk_to_multilineEndDelimiter(unsigned char* p, int n, int original_chunk_size, int scan_scope){
-    // 先向前扫描，如果找到未匹配的start delimiter，那么就向后扫描，否则直接返回0代表无需对齐；
+int find_substr_num(char* big_str, int big_size, char* sub_str, int sub_size) {
+    if (sub_size == 0 || big_size < sub_size) {
+        return 0; // 空串或 sub_str 比 big_str 长，直接返回 0
+    }
+
+    int count = 0;
+    char* p = big_str;
+    while (p <= big_str + big_size - sub_size) {
+        if (strncmp(p, sub_str, sub_size) == 0) { // 检查当前子串是否匹配 sub_str
+            count++;
+            p += sub_size; // 跳过已匹配的部分（非重叠匹配）
+        } else {
+            p++; // 不匹配则继续向后查找
+        }
+    }
+    return count;
+}
+
+int align_chunk_to_multilineEndDelimiter(unsigned char* p, int n, int original_chunk_size, 
+                                        int scan_scope, enum LANG lang){
     bool found_start = false;
-    
     int pos = original_chunk_size - 1;
     if(original_chunk_size < scan_scope){
         scan_scope = original_chunk_size;
     }
 
-    // 反向扫描
-    while(pos >= (original_chunk_size-scan_scope+1)){
-        if(p[pos-1] == '*' && p[pos] == '/'){
-            //如果提前遇到end delimiter，说明没有多行注释被分割，直接返回0就行； 
-            break;
-        }
-        
-        if(p[pos-1] == '/' && p[pos] == '*'){
-            found_start = true;
-            break;
-        }
-        pos --;
+    // 无原生多行注释支持
+    if(lang == LANG_FORTRAN || lang == LANG_VB){
+        return 0;
     }
+
+    // 先向后扫描，如果找到未匹配的start delimiter，那么就向前扫描，否则直接返回0代表无需对齐；
+    // 反向扫描
+    if(lang == LANG_CPP || 
+        lang == LANG_C || 
+        lang == LANG_JAVA || 
+        lang == LANG_CSHARP || 
+        lang == LANG_JAVASCRIPT || 
+        lang == LANG_GO){
+        
+        while(pos >= (original_chunk_size-scan_scope+1)){
+            if(p[pos-1] == '*' && p[pos] == '/'){
+                //如果提前遇到end delimiter，说明没有多行注释被分割，直接返回0就行； 
+                break;
+            }
+            
+            if(p[pos-1] == '/' && p[pos] == '*'){
+                found_start = true;
+                break;
+            }
+            pos --;
+        }   
+    }
+
+    bool find_unmatch_single_quote = false;
+    bool find_unmatch_double_quote = false;
+    if(lang == LANG_PYTHON){
+        /*
+            笨办法，开销较大；
+            如果三单引和三双引号出现的总次数是奇数，则found，否则不found；
+            不可能出现单引号双引号数量都是奇数的情况，因为上一个块已经被多行注释对齐了。
+        */
+        int single_quote_count = find_substr_num((char*)p, original_chunk_size, "\'\'\'", 3);
+        int double_quote_count = find_substr_num((char*)p, original_chunk_size, "\"\"\"", 3);
+        find_unmatch_single_quote = (single_quote_count%2 == 1);
+        find_unmatch_double_quote = (double_quote_count%2 == 1);
+
+        if(find_unmatch_single_quote && find_unmatch_double_quote){
+            printf("Fatal Error: find_unmatch_single_quote && find_unmatch_double_quote\n");
+            printf("single_quote_count %d double_quote_count %d\n", single_quote_count, double_quote_count);
+            exit(-1);
+        }
+
+        if((single_quote_count + double_quote_count)%2 == 0){
+            found_start = false;
+        }else{
+            found_start = true;
+        }
+    }
+
     if(!found_start)
         return 0;
 
@@ -330,18 +392,62 @@ int align_chunk_to_multilineEndDelimiter(unsigned char* p, int n, int original_c
 	n -= original_chunk_size;
 	int boundary_skew = 0;
 
-	while(1) {
-        if(original_chunk_size + (boundary_skew+1) >= (MaxSize-1))break;
-		if((boundary_skew+1) >= (n-1))break; 
-        if(p[boundary_skew] == '*' && p[boundary_skew+1] == '/'){
-            found_end;
-            break;
+    if(lang == LANG_CPP || 
+        lang == LANG_C || 
+        lang == LANG_JAVA || 
+        lang == LANG_CSHARP || 
+        lang == LANG_JAVASCRIPT || 
+        lang == LANG_GO){
+        while(1) {
+            if(original_chunk_size + (boundary_skew+1) >= (MaxSize-1))break;
+            if((boundary_skew+1) >= (n-1))break; 
+
+            if(p[boundary_skew] == '*' && p[boundary_skew+1] == '/'){
+                found_end;
+                break;
+            }
+
+            boundary_skew++;
         }
 
-		boundary_skew++;
-	}
+        boundary_skew += 2; 
+	    return boundary_skew;
+    }  
 
-	boundary_skew += 2; 
-    
-	return boundary_skew;
+    if(lang == LANG_PYTHON && find_unmatch_single_quote){
+        while(1) {
+            // 这两个break应该遇不到，除非是很大块的注释；
+            if(original_chunk_size + (boundary_skew+2) >= (MaxSize-1))break;
+            if((boundary_skew+2) >= (n-2))break; 
+
+            if(p[boundary_skew] == '\'' && p[boundary_skew+1] == '\'' && p[boundary_skew+2] == '\''){
+                found_end;
+                break;
+            }
+
+            boundary_skew++;
+        }
+
+        boundary_skew += 3; 
+	    return boundary_skew;
+
+    }else if(lang == LANG_PYTHON && find_unmatch_double_quote){
+        while(1) {
+            if(original_chunk_size + (boundary_skew+2) >= (MaxSize-1))break;
+            if((boundary_skew+2) >= (n-2))break; 
+
+            if(p[boundary_skew] == '\"' && p[boundary_skew+1] == '\"' && p[boundary_skew+2] == '\"'){
+                found_end;
+                break;
+            }
+
+            boundary_skew++;
+        }
+
+        boundary_skew += 3; 
+	    return boundary_skew;
+    }
+
+    // should not reach here
+    return 0;
 }

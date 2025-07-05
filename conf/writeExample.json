@@ -1,11 +1,11 @@
 {
   "Task": "write",
-  "InputFile": "/home/cyf/ssd0/cloc/codeLEVELDB",
+  "InputFile": "/home/cyf/ssd0/cloc/fortranWRF",
   "ChunkingMethod": "cdc",
   "Size": 4096,
   "BackwardScanScope":512,
+  "language": "fortran",
   "Normal": 2,
-  "MerkleTree": "no",
   "containersPath": "/home/cyf/ssd1/working2/Containers",
   "fileRecipesPath": "/home/cyf/ssd1/working2/metadata/FileRecipes",
   "fingerprintsFilePath": "/home/cyf/ssd1/working2/metadata/fingerprints.meta"

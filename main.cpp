@@ -52,6 +52,7 @@ struct backup_job bj;
 int (*chunking) (unsigned char*p, int n);
 int cpp_file_num = 0;
 int py_file_num = 0;
+int fortran_file_num = 0;
 
 // used for normal count
 uint64_t global_code_line = 0;
@@ -206,7 +207,7 @@ void initChunkingAlgorithm(){
 /*
     代码行必须有回车才能算作一行，如果最后一行代码没回车，那么不被算作一行；
 */
-void countLines(uint8_t *c, uint32_t length,
+void countLinesCPP(uint8_t *c, uint32_t length,
                 uint64_t& code_lines, uint64_t& comment_lines, uint64_t& blank_lines) {
     enum { CODE, BLOCK_COMMENT, LINE_COMMENT } state = CODE;
     bool line_first_char = true;
@@ -314,6 +315,67 @@ void countLinesPython(uint8_t *c, uint32_t length,
     }
 }
 
+// no multi line comments support
+void countLinesFortran(uint8_t *c, uint32_t length,
+                uint64_t& code_lines, uint64_t& comment_lines, uint64_t& blank_lines) {
+    int single_comment_delimiter_size_python = 1;
+
+    enum { CODE, BLOCK_COMMENT, LINE_COMMENT } state = CODE;
+    bool line_first_char = true;
+
+    for (size_t i = 0; i < length; i++) {
+        unsigned char currentChar = c[i];
+
+        if (state == CODE) {
+            if (currentChar == '#') {
+                state = LINE_COMMENT;
+                line_first_char = false;
+                i+=single_comment_delimiter_size_python;
+                comment_lines++;
+            } else if (currentChar == '\n') {
+                if(line_first_char)
+                    blank_lines ++;
+                else
+                    code_lines++;
+                line_first_char = true;
+            }else{
+                line_first_char = false;
+            }
+        } else if (state == LINE_COMMENT) {
+            if (currentChar == '\n') {
+                line_first_char = true;
+                state = CODE;
+                comment_lines++;
+            }
+        }
+    }
+}
+
+void (*countLines)(uint8_t *c, uint32_t length,uint64_t& code_lines, uint64_t& comment_lines, uint64_t& blank_lines);
+
+void initCountLines(enum LANG lang){
+    if(lang == LANG_PYTHON){
+        countLines = countLinesPython;
+    }else if(lang == LANG_CPP){
+        countLines = countLinesCPP;
+    }else if(lang == LANG_C){
+        countLines = countLinesCPP;
+    }else if(lang == LANG_JAVA){
+        countLines = countLinesCPP;
+    }else if(lang == LANG_CSHARP){
+        countLines = countLinesCPP;
+    }else if(lang == LANG_JAVASCRIPT){
+        countLines = countLinesCPP;
+    }else if(lang == LANG_GO){
+        countLines = countLinesCPP;
+    }else if(lang == LANG_FORTRAN){
+        countLines = countLinesFortran;
+    }else{
+        exit(-1);
+        printf("Not support language");
+    }
+}
+
 void writeFile(string path){
     int idf = open(path.c_str(), O_RDONLY | O_DIRECT, 0777);
     if(idf < 0){
@@ -356,6 +418,7 @@ void writeFile(string path){
     uint64_t chunk_blank_lines = 0;
 
     int scan_scope = Config::getInstance().getBackwardScanScope();
+    enum LANG lang = Config::getInstance().getLanugage();
     
     // 普通分块重删，来一个块查寻一次，然后把non-duplicate chunk保存到container去
     for(;;){
@@ -375,7 +438,8 @@ void writeFile(string path){
             chunk_length += align_chunk_to_enterSymbol(file_cache + file_offset, n_read - file_offset, chunk_length);
             
             // multiline aware chunking
-            chunk_length += align_chunk_to_multilineEndDelimiter(file_cache + file_offset, n_read - file_offset, chunk_length, scan_scope);
+            chunk_length += align_chunk_to_multilineEndDelimiter(file_cache + file_offset, n_read - file_offset, chunk_length, 
+                                                                 scan_scope, lang);
 
             // Hash
             memset(&sha1_fp, 0, sizeof(struct SHA1FP));
@@ -489,16 +553,7 @@ std::vector<fs::path> traverseDirectory(const fs::path& directory) {
         // 遍历目录
         for (const auto& entry : fs::directory_iterator(directory)) {
             if (fs::is_regular_file(entry)) {
-                std::string extension = getExtension(entry.path().string());
-                if(extension == "cpp" || extension == "cc" || extension == "c"){
-                    cpp_file_num ++;
-                    files.push_back(entry.path());
-                }
-
-                if(extension == "py"){
-                    py_file_num ++;
-                    files.push_back(entry.path());
-                }
+                files.push_back(entry.path());
                     
             } else if (fs::is_directory(entry)) {
                 std::vector<fs::path> r_files = traverseDirectory(entry.path());
@@ -678,8 +733,6 @@ int main(int argc, char** argv){
         }
 
         printf("-----------------------Code line statics----------------------\n");
-        printf("CPP files num %d\n", cpp_file_num);
-        printf("PY files num %d\n", py_file_num);
         printf("Code lines %" PRIu64 "\n",            global_code_line);
         printf("Comment lines %" PRIu64 "\n",         global_comment_line);
         printf("Blank lines %" PRIu64 "\n",           global_blank_line);
@@ -693,6 +746,9 @@ int main(int argc, char** argv){
         }
 
         initChunkingAlgorithm();
+
+        enum LANG language_type = Config::getInstance().getLanugage();    
+        initCountLines(language_type);
 
         string input_path = Config::getInstance().getInputPath();
 
@@ -728,8 +784,6 @@ int main(int argc, char** argv){
         printf("Dedup chunks num %" PRIu64 "\n",      bj.dedup_chunks);
         printf("Dedup data size %" PRIu64 "\n",       bj.dedup_size);
         printf("-----------------------Code line statics----------------------\n");
-        printf("CPP files num %d\n", cpp_file_num);
-        printf("PY files num %d\n", py_file_num);
         printf("Code lines %" PRIu64 "\n",            bj.code_lines);
         printf("Comment lines %" PRIu64 "\n",         bj.comment_lines);
         printf("Blank lines %" PRIu64 "\n",           bj.blank_lines);

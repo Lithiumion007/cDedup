@@ -8,6 +8,7 @@
 #include <sys/time.h>
 #include <zlib.h>
 #include "uthash.h"
+#include "config.h"
 
 // CDC
 void fastCDC_init(int fastcdc_avg_size, int NC_level);
@@ -22,6 +23,6 @@ int FSC_16(unsigned char *p, int n);
 
 // cloc
 int align_chunk_to_enterSymbol(unsigned char* p, int n, int original_chunk_size);
-int align_chunk_to_multilineEndDelimiter(unsigned char* p, int n, int original_chunk_size, int);
+int align_chunk_to_multilineEndDelimiter(unsigned char* p, int n, int original_chunk_size, int, enum LANG);
 
 #endif
