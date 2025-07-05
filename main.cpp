@@ -315,6 +315,111 @@ void countLinesPython(uint8_t *c, uint32_t length,
     }
 }
 
+// 无多行注释支持
+// 单行注释一个单引号或者rem或者REM
+void countLinesVisualBasic(uint8_t *c, uint32_t length,
+                uint64_t& code_lines, uint64_t& comment_lines, uint64_t& blank_lines) {
+    enum { CODE, BLOCK_COMMENT, LINE_COMMENT } state = CODE;
+    bool line_first_char = true;
+    for (size_t i = 0; i < length; i++) {
+        unsigned char currentChar = c[i];
+        unsigned char nextChar = (i < length - 1) ? c[i + 1] : '\0';
+        unsigned char nextNextChar = (i < length - 2) ? c[i + 2] : '\0';
+
+        if (state == CODE) {
+            if (currentChar == '\'') {
+                state = LINE_COMMENT;
+                line_first_char = false;
+                i+=1;
+                comment_lines++;
+            } else if (currentChar == 'r' && nextChar == 'e' && nextNextChar == 'm') {
+                state = LINE_COMMENT;
+                line_first_char = false;
+                i+=3;
+                comment_lines++;
+            } else if (currentChar == 'R' && nextChar == 'E' && nextNextChar == 'M') {
+                state = LINE_COMMENT;
+                line_first_char = false;
+                i+=3;
+                comment_lines++;
+            } else if (currentChar == '\n') {
+                if(line_first_char)
+                    blank_lines ++;
+                else
+                    code_lines++;
+                line_first_char = true;
+            }else{
+                line_first_char = false;
+            }
+        } else if (state == LINE_COMMENT) {
+            if (currentChar == '\n') {
+                line_first_char = true;
+                state = CODE;
+                comment_lines++;
+            }
+        }
+    }
+}
+
+
+// 单行注释两个斜杠
+// 多行注释{}或者(**)
+void countLinesDelphi(uint8_t *c, uint32_t length,
+                uint64_t& code_lines, uint64_t& comment_lines, uint64_t& blank_lines) {
+    enum { CODE, BLOCK_COMMENT, LINE_COMMENT } state = CODE;
+    bool line_first_char = true;
+    for (size_t i = 0; i < length; i++) {
+        unsigned char currentChar = c[i];
+        unsigned char nextChar = (i < length - 1) ? c[i + 1] : '\0';
+
+        if (state == CODE) {
+            if (currentChar == '/' && nextChar == '/') {
+                state = LINE_COMMENT;
+                line_first_char = false;
+                i+=2;
+                comment_lines++;
+            } else if (currentChar == '(' && nextChar == '*') {
+                state = BLOCK_COMMENT;
+                line_first_char = false;
+                i+=2;
+            } else if (currentChar == '{') {
+                state = BLOCK_COMMENT;
+                line_first_char = false;
+                i+=1;
+            } else if (currentChar == '\n') {
+                if(line_first_char)
+                    blank_lines ++;
+                else
+                    code_lines++;
+                line_first_char = true;
+            }else{
+                line_first_char = false;
+            }
+        } else if (state == BLOCK_COMMENT) {
+            if (currentChar == '*' && nextChar == ')') {
+                state = CODE;
+                line_first_char = false;
+                i+=2;
+                comment_lines++;
+            }else if (currentChar == '}') {
+                state = CODE;
+                line_first_char = false;
+                i+=1;
+                comment_lines++;
+            } else if (currentChar == '\n') {
+                line_first_char = true;
+                comment_lines++;
+            }
+        } else if (state == LINE_COMMENT) {
+            if (currentChar == '\n') {
+                line_first_char = true;
+                state = CODE;
+                comment_lines++;
+            }
+        }
+    }
+}
+
 // no multi line comments support
 void countLinesFortran(uint8_t *c, uint32_t length,
                 uint64_t& code_lines, uint64_t& comment_lines, uint64_t& blank_lines) {
@@ -368,6 +473,10 @@ void initCountLines(enum LANG lang){
         countLines = countLinesCPP;
     }else if(lang == LANG_GO){
         countLines = countLinesCPP;
+    }else if(lang == LANG_VB){
+        countLines = countLinesVisualBasic;
+    }else if(lang == LANG_DELPHI){
+        countLines = countLinesDelphi;
     }else if(lang == LANG_FORTRAN){
         countLines = countLinesFortran;
     }else{

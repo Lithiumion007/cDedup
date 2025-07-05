@@ -329,14 +329,22 @@ int align_chunk_to_multilineEndDelimiter(unsigned char* p, int n, int original_c
         scan_scope = original_chunk_size;
     }
 
+    // used for python only
+    bool find_unmatch_single_quote = false;
+    bool find_unmatch_double_quote = false;
+
+    // used for delphi only
+    bool find_unmatch_big_brace = false; // { 和 }
+    bool find_unmatch_brace_and_star = false; // (* 和 *)
+
     // 无原生多行注释支持
     if(lang == LANG_FORTRAN || lang == LANG_VB){
         return 0;
-    }
+    } 
 
     // 先向后扫描，如果找到未匹配的start delimiter，那么就向前扫描，否则直接返回0代表无需对齐；
     // 反向扫描
-    if(lang == LANG_CPP || 
+    else if(lang == LANG_CPP || 
         lang == LANG_C || 
         lang == LANG_JAVA || 
         lang == LANG_CSHARP || 
@@ -357,9 +365,7 @@ int align_chunk_to_multilineEndDelimiter(unsigned char* p, int n, int original_c
         }   
     }
 
-    bool find_unmatch_single_quote = false;
-    bool find_unmatch_double_quote = false;
-    if(lang == LANG_PYTHON){
+    else if(lang == LANG_PYTHON){
         /*
             笨办法，开销较大；
             如果三单引和三双引号出现的总次数是奇数，则found，否则不found；
@@ -381,6 +387,36 @@ int align_chunk_to_multilineEndDelimiter(unsigned char* p, int n, int original_c
         }else{
             found_start = true;
         }
+    } else if(lang == LANG_DELPHI){
+        while(pos >= (original_chunk_size-scan_scope+1)){
+            if(p[pos-1] == '*' && p[pos] == ')'){
+                //如果提前遇到end delimiter，说明没有多行注释被分割，直接返回0就行； 
+                break;
+            }
+
+            if(p[pos] == '}'){
+                //如果提前遇到end delimiter，说明没有多行注释被分割，直接返回0就行； 
+                break;
+            }
+            
+            if(p[pos-1] == '(' && p[pos] == '*'){
+                found_start = true;
+                find_unmatch_brace_and_star = true;
+                break;
+            }
+
+            if(p[pos] == '{'){
+                found_start = true;
+                find_unmatch_big_brace = true;
+                break;
+            }
+            pos --;
+        }  
+
+    } else {
+        // should not reach here
+        printf("多行对齐遇到不支持的语言\n");
+        exit(-1);
     }
 
     if(!found_start)
@@ -414,11 +450,17 @@ int align_chunk_to_multilineEndDelimiter(unsigned char* p, int n, int original_c
 	    return boundary_skew;
     }  
 
-    if(lang == LANG_PYTHON && find_unmatch_single_quote){
+    // Python
+    else if(lang == LANG_PYTHON && find_unmatch_single_quote){
         while(1) {
             // 这两个break应该遇不到，除非是很大块的注释；
-            if(original_chunk_size + (boundary_skew+2) >= (MaxSize-1))break;
-            if((boundary_skew+2) >= (n-2))break; 
+            if(original_chunk_size + (boundary_skew+2) >= (MaxSize-1)){
+                break; 
+            }
+
+            if((boundary_skew+2) >= (n-2)){
+                break; 
+            }
 
             if(p[boundary_skew] == '\'' && p[boundary_skew+1] == '\'' && p[boundary_skew+2] == '\''){
                 found_end;
@@ -431,10 +473,12 @@ int align_chunk_to_multilineEndDelimiter(unsigned char* p, int n, int original_c
         boundary_skew += 3; 
 	    return boundary_skew;
 
-    }else if(lang == LANG_PYTHON && find_unmatch_double_quote){
+    } else if(lang == LANG_PYTHON && find_unmatch_double_quote){
         while(1) {
-            if(original_chunk_size + (boundary_skew+2) >= (MaxSize-1))break;
-            if((boundary_skew+2) >= (n-2))break; 
+            if(original_chunk_size + (boundary_skew+2) >= (MaxSize-1))
+                break;
+            if((boundary_skew+2) >= (n-2))
+                break; 
 
             if(p[boundary_skew] == '\"' && p[boundary_skew+1] == '\"' && p[boundary_skew+2] == '\"'){
                 found_end;
@@ -445,6 +489,40 @@ int align_chunk_to_multilineEndDelimiter(unsigned char* p, int n, int original_c
         }
 
         boundary_skew += 3; 
+	    return boundary_skew;
+    } 
+    
+    // Delphi
+    else if(lang == LANG_DELPHI && find_unmatch_big_brace){
+        while(1) {
+            if(original_chunk_size + (boundary_skew) >= (MaxSize-1))break;
+            if((boundary_skew) >= (n))break; 
+
+            if(p[boundary_skew] == '}'){
+                found_end;
+                break;
+            }
+
+            boundary_skew++;
+        }
+
+        boundary_skew += 1; 
+	    return boundary_skew;
+
+    } else if(lang == LANG_DELPHI && find_unmatch_brace_and_star){
+        while(1) {
+            if(original_chunk_size + (boundary_skew+1) >= (MaxSize-1))break;
+            if((boundary_skew+1) >= (n-1))break; 
+
+            if(p[boundary_skew] == '*' && p[boundary_skew+1] == ')'){
+                found_end;
+                break;
+            }
+
+            boundary_skew++;
+        }
+
+        boundary_skew += 2; 
 	    return boundary_skew;
     }
 
