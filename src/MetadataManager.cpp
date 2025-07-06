@@ -7,7 +7,7 @@
 
 MetadataManager *GlobalMetadataManagerPtr;
 
-int MetadataManager::load(){
+void MetadataManager::load(){
     printf("-----------------------Loading FP-index-----------------------\n");
     printf("Loading index..\n");
 
@@ -33,33 +33,65 @@ int MetadataManager::load(){
     printf("metadata table load %d items\n", entry_count);
 }
 
-int MetadataManager::save(){
+void MetadataManager::save() {
     printf("-----------------------Saving FP-index-----------------------\n");
-    int fd = open(this->metadata_file_path.c_str(), O_WRONLY | O_CREAT, 0777);
-    if(fd < 0){
-        perror("Saving fp index error, the reason is ");
-        exit(-1);
-    }
-    lseek(fd, 0, SEEK_SET);
-    ftruncate(fd,0);
-
-    int count = 0;
     
-    for(auto item : this->fp_table_added){
-        write(fd, (uint8_t*)&item.first, sizeof(SHA1FP));
-        write(fd, (uint8_t*)&item.second, sizeof(ENTRY_VALUE));
-        count++;
-    }
-    printf("New added item %d\n", count);
+    // 使用 RAII 包装文件描述符
+    class FileDescriptor {
+        int fd = -1;
+    public:
+        FileDescriptor(const std::string& path, int flags, mode_t mode) {
+            fd = open(path.c_str(), flags, mode);
+            if (fd < 0) {
+                throw std::runtime_error("open failed: " + std::string(strerror(errno)));
+            }
+        }
+        ~FileDescriptor() { if (fd != -1) close(fd); }
+        operator int() const { return fd; }
+        
+        void writeAll(const void* buf, size_t count) {
+            const uint8_t* p = static_cast<const uint8_t*>(buf);
+            while (count > 0) {
+                ssize_t written = ::write(fd, p, count);
+                if (written == -1) {
+                    throw std::runtime_error("write failed: " + std::string(strerror(errno)));
+                }
+                count -= written;
+                p += written;
+            }
+        }
+    };
 
-    for(auto item : this->fp_table_origin){
-        write(fd, (uint8_t*)&item.first, sizeof(SHA1FP));
-        write(fd, (uint8_t*)&item.second, sizeof(ENTRY_VALUE));
-        count++;
-    }
-    printf("total item %d\n", count);
+    try {
+        FileDescriptor fd(this->metadata_file_path, O_WRONLY | O_CREAT | O_TRUNC, 0777);
+        
+        // 使用 lseek + ftruncate 清空文件更高效
+        if (ftruncate(fd, 0) == -1) {
+            throw std::runtime_error("ftruncate failed: " + std::string(strerror(errno)));
+        }
 
-    close(fd);
+        int count = 0;
+        
+        // 写入新增项
+        for (const auto& item : this->fp_table_added) {
+            fd.writeAll(&item.first, sizeof(SHA1FP));
+            fd.writeAll(&item.second, sizeof(ENTRY_VALUE));
+            count++;
+        }
+        printf("New added items: %d\n", count);
+
+        // 写入原始项
+        for (const auto& item : this->fp_table_origin) {
+            fd.writeAll(&item.first, sizeof(SHA1FP));
+            fd.writeAll(&item.second, sizeof(ENTRY_VALUE));
+            count++;
+        }
+        printf("Total items: %d\n", count);
+
+    } catch (const std::exception& e) {
+        fprintf(stderr, "Error saving metadata: %s\n", e.what());
+        exit(EXIT_FAILURE);
+    }
 }
 
 

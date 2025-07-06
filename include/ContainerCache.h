@@ -12,7 +12,11 @@ class ContainerCache : public Cache{
         ContainerCache(const char* containersPath, int cache_max_size){
             this->containers_path = containersPath;
             this->cache_max_size = cache_max_size; // 单位：容器数量
-            posix_memalign((void**)&this->container_buf, SECTOR_SIZE, CONTAINER_SIZE);
+            int ret = posix_memalign((void**)&this->container_buf, SECTOR_SIZE, CONTAINER_SIZE);
+            if (ret != 0) {
+                fprintf(stderr, "posix_memalign failed: %s\n", strerror(ret));
+                exit(EXIT_FAILURE); // 或者抛出异常
+            }
         }
 
         ~ContainerCache(){

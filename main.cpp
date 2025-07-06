@@ -16,7 +16,6 @@
 #include <algorithm>
 
 #include "fastcdc.h"
-#include "full_file_deduplicater.h"
 #include "MetadataManager.h"
 #include "ContainerCache.h"
 #include "ChunkCache.h"
@@ -46,7 +45,7 @@ struct backup_job{
 
 namespace fs = std::experimental::filesystem;
 
-char* global_stat_path = "/home/cyf/cDedup/global_stat.json";
+const char* global_stat_path = "/home/cyf/cDedup/global_stat.json";
 extern MetadataManager *GlobalMetadataManagerPtr;
 struct backup_job bj;
 int (*chunking) (unsigned char*p, int n);
@@ -59,23 +58,37 @@ uint64_t global_code_line = 0;
 uint64_t global_blank_line = 0;
 uint64_t global_comment_line = 0;
 uint64_t LOC_time = 0;
+uint64_t chunking_time = 0;
 struct timeval LOC_time_start, LOC_time_end;
+struct timeval chunking_time_start, chunking_time_end;
 uint64_t restore_size = 0;
 std::unordered_set<SHA1FP, TupleHasher, TupleEqualer> restore_LOC_set;
 
-uint32_t getFilesNum(const char* dirPath){
-    int ans = 0;
+uint32_t getFilesNum(const char* dirPath) {
+    uint32_t ans = 0;
     DIR *dir = opendir(dirPath);
-    if(!dir){
-        printf("getFilesNum opendir error, id %d, %s, the dir is %s\n", 
-        errno, strerror(errno), dirPath);
-        closedir(dir);
-        exit(-1);
+    
+    if (!dir) {
+        fprintf(stderr, "getFilesNum opendir error, id %d, %s, the dir is %s\n", 
+                errno, strerror(errno), dirPath);
+        exit(EXIT_FAILURE);
     }
+
     struct dirent* ptr;
-    while(readdir(dir)) ans++;
-    closedir(dir);
-    return ans-2;
+    while (ptr = readdir(dir)) {
+        // 跳过 "." 和 ".." 目录
+        if (strcmp(ptr->d_name, ".") && strcmp(ptr->d_name, "..")) {
+            ans++;
+        }
+    }
+
+    if (closedir(dir) == -1) {
+        fprintf(stderr, "getFilesNum closedir error, id %d, %s\n",
+                errno, strerror(errno));
+        // 这里不退出，因为已经读取完毕
+    }
+
+    return ans;
 }
 
 void saveFileRecipe(std::vector<std::string> file_recipe, const char* fileRecipesPath){
@@ -143,8 +156,8 @@ void saveContainer(int container_index, unsigned char* container_buf, unsigned i
     std::string container_name(containersPath);
     container_name.append("/container");
     container_name.append(std::to_string(container_index));
-    int fd = open(container_name.data(), O_RDWR | O_CREAT | O_DIRECT);
-    write(fd, container_buf, CONTAINER_SIZE);
+    int fd = open(container_name.data(), O_RDWR | O_CREAT | O_DIRECT, 0777);
+    int n = write(fd, container_buf, CONTAINER_SIZE);
     close(fd);
 }
 
@@ -492,8 +505,12 @@ void writeFile(string path){
         exit(-1);
     }
 
-    unsigned char* file_cache; 
-    posix_memalign((void**)&file_cache, 512, FILE_CACHE);
+    unsigned char* file_cache = nullptr;
+    int result1 = posix_memalign((void**)&file_cache, 512, FILE_CACHE);
+    if (result1 != 0 || file_cache == nullptr) {
+        fprintf(stderr, "Failed to allocate aligned memory: %s\n", strerror(result1));
+        exit(EXIT_FAILURE);  // 或者抛出异常 throw std::bad_alloc();
+    }
 
     struct SHA1FP sha1_fp;
     std::vector<std::string> file_recipe; // 保存这个文件所有块的指纹
@@ -504,8 +521,14 @@ void writeFile(string path){
     uint32_t chunk_length = 0;
     uint16_t container_inner_index = 0;
 
-    unsigned char* container_buf;
-    posix_memalign((void**)&container_buf, 512, CONTAINER_SIZE);
+    unsigned char* container_buf = nullptr;
+    int result2 = posix_memalign((void**)&container_buf, 512, CONTAINER_SIZE);
+    if (result2 != 0 || container_buf == nullptr) {
+        // 内存分配失败处理
+        fprintf(stderr, "Memory allocation failed: %s\n", strerror(result2));
+        exit(EXIT_FAILURE); // 或抛出异常 throw std::bad_alloc();
+    }
+
     unsigned int container_buf_pointer = 0;
     uint32_t file_offset = 0;
     uint32_t n_read = 0;
@@ -541,6 +564,7 @@ void writeFile(string path){
         }
 
         while(file_offset < n_read){  
+            gettimeofday(&chunking_time_start, NULL);
             if(cloc_method == DC_NON_ALIGN || cloc_method == NAIVE_CLOC){
                 chunk_length = chunking(file_cache + file_offset, n_read - file_offset);
             }else if(cloc_method == DC_NEWLINE){
@@ -552,6 +576,10 @@ void writeFile(string path){
                 chunk_length += align_chunk_to_multilineEndDelimiter(file_cache + file_offset, n_read - file_offset, chunk_length, 
                                                                  scan_scope, lang);
             }
+            gettimeofday(&chunking_time_end, NULL);
+                chunking_time += (chunking_time_end.tv_sec - chunking_time_start.tv_sec) * 1000000 + 
+                                            chunking_time_end.tv_usec - chunking_time_start.tv_usec;
+            
 
             // Hash
             memset(&sha1_fp, 0, sizeof(struct SHA1FP));
@@ -665,24 +693,28 @@ std::string getExtension(const std::string& filename) {
 }
 
 std::vector<fs::path> traverseDirectory(const fs::path& directory) {
-    try {
-        std::vector<fs::path> files;
+    std::vector<fs::path> files;
 
+    try {
         // 遍历目录
         for (const auto& entry : fs::directory_iterator(directory)) {
-            if (fs::is_regular_file(entry)) {
-                files.push_back(entry.path());
-                    
-            } else if (fs::is_directory(entry)) {
-                std::vector<fs::path> r_files = traverseDirectory(entry.path());
-                files.insert(files.end(), r_files.begin(), r_files.end());
+            try {
+                if (fs::is_regular_file(entry)) {
+                    files.push_back(entry.path());
+                } else if (fs::is_directory(entry)) {
+                    auto sub_files = traverseDirectory(entry.path());
+                    files.insert(files.end(), sub_files.begin(), sub_files.end());
+                }
+            } catch (const std::exception& ex) {
+                std::cerr << "Error processing " << entry.path() << ": " << ex.what() << std::endl;
+                continue; // 继续处理其他文件
             }
         }
-
-        return files;
     } catch (const std::exception& ex) {
-        std::cerr << "Error: " << ex.what() << std::endl;
+        std::cerr << "Directory traversal error: " << ex.what() << std::endl;
     }
+
+    return files; // 确保所有路径都返回
 }
 
 void traverseWriteDirectory(const fs::path& directory) {
@@ -826,8 +858,11 @@ void restoreVersion(int version){
 }
 
 int main(int argc, char** argv){
-    // 超级权限
-    setuid(0);
+    // // 超级权限
+    // if (setuid(0) == -1) {
+    //     perror("Failed to setuid(0)");
+    //     exit(EXIT_FAILURE);
+    // }
 
     // 参数解析
     Config::getInstance().parse_argument(argc, argv);
@@ -837,6 +872,9 @@ int main(int argc, char** argv){
     
     GlobalMetadataManagerPtr = new MetadataManager(Config::getInstance().getFingerprintsFilePath().c_str());
     if(Config::getInstance().getTaskType() == TASK_LOC){
+        enum LANG language_type = Config::getInstance().getLanugage();    
+        initCountLines(language_type);
+
         string input_path = Config::getInstance().getInputPath();
 
         if (!fs::exists(input_path)) {
@@ -892,23 +930,25 @@ int main(int argc, char** argv){
         float throughput = (float)(bj.sum_size) / MB / ((float)(single_dedup_time_us)/1000000);
 
         float LOC_time_percetage = float(LOC_time) / (float)single_dedup_time_us * 100;
+        float chunking_speed = (float)(bj.sum_size) / MB / ((float)(chunking_time)/1000000);
 
         // 写文件 - 重删统计
         printf("-----------------------Dedup statics----------------------\n");
         printf("Hash collision num %" PRIu64 "\n",    bj.hash_collision_sum); // should be zero
-        printf("Sum chunks num % " PRIu64 "\n",       bj.sum_chunks);
+        printf("Sum chunks num %" PRIu64 "\n",       bj.sum_chunks);
         printf("Sum data size %" PRIu64 "\n",         bj.sum_size);
         printf("Average chunk size %" PRIu64 "\n",    bj.sum_size / bj.sum_chunks);
         printf("Dedup chunks num %" PRIu64 "\n",      bj.dedup_chunks);
         printf("Dedup data size %" PRIu64 "\n",       bj.dedup_size);
+        printf("Chunking Speed %.2f MiB/s\n",         chunking_speed);
         printf("-----------------------Code line statics----------------------\n");
-        printf("Code lines %" PRIu64 "\n",            bj.code_lines);
-        printf("Comment lines %" PRIu64 "\n",         bj.comment_lines);
-        printf("Blank lines %" PRIu64 "\n",           bj.blank_lines);
+        printf("Code lines %" PRIu32 "\n", bj.code_lines);
+        printf("Comment lines %" PRIu32 "\n", bj.comment_lines);
+        printf("Blank lines %" PRIu32 "\n", bj.blank_lines);
         printf("-----------------------statics----------------------\n");
-        printf("LOC time percentage %.2f%\n", LOC_time_percetage);
+        printf("LOC time percentage %.2f%%\n", LOC_time_percetage);
         printf("Throughput %.2f MiB/s\n",    throughput);
-        printf("Dedup Ratio %.2f%\n",     double(bj.dedup_size) / double(bj.sum_size) *100);
+        printf("Dedup Ratio %.2f%%\n",     double(bj.dedup_size) / double(bj.sum_size) *100);
 
         // 保存全局信息
         GlobalStat::getInstance().update(bj.sum_size, bj.sum_size - bj.dedup_size);
@@ -936,8 +976,8 @@ int main(int argc, char** argv){
         float LOC_time_percetage = float(LOC_time) / (float)single_dedup_time_us * 100; 
 
         printf("-----------------------Restore statics----------------------\n");
-        printf("LOC time percentage %.2f%\n", LOC_time_percetage);
-        printf("Restore size %lld\n", restore_size);
+        printf("LOC time percentage %.2f%%\n", LOC_time_percetage);
+        printf("Restore size %ld\n", restore_size);
         printf("Restore Throughput %.2f MiB/s\n", restore_throughput);
 
     }

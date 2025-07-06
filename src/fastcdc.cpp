@@ -1,6 +1,24 @@
 #include "fastcdc.h"
 #include "config.h"
 
+void compute_md5(const unsigned char* data, size_t len, unsigned char* md5_out) {
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    if (!ctx) {
+        // 错误处理
+        return;
+    }
+
+    if (EVP_DigestInit_ex(ctx, EVP_md5(), NULL) != 1 ||
+        EVP_DigestUpdate(ctx, data, len) != 1 ||
+        EVP_DigestFinal_ex(ctx, md5_out, NULL) != 1) {
+        // 错误处理
+        EVP_MD_CTX_free(ctx);
+        return;
+    }
+
+    EVP_MD_CTX_free(ctx);
+}
+
 // predefined Gear Mask
 uint64_t GEARv2[256] = {
     0xdc377e207d3c5d43, 0x626790b237a4ab52, 0xfad9bf3a472cfe4d,
@@ -158,7 +176,7 @@ void fastCDC_init(int fas, int NC_level) {
         }
 
         g_global_matrix[i] = 0;
-        MD5(seed, SeedLength, md5_digest);
+        compute_md5(seed, SeedLength, md5_digest);
         memcpy(&(g_global_matrix[i]), md5_digest, 4);
         g_global_matrix_left[i] = g_global_matrix[i] << 1;
     }
@@ -303,19 +321,21 @@ int align_chunk_to_enterSymbol(unsigned char* p, int n, int original_chunk_size)
 	return align_chunk_by_condition(p, n, original_chunk_size, isNewline);
 }
 
-int find_substr_num(char* big_str, int big_size, char* sub_str, int sub_size) {
-    if (sub_size == 0 || big_size < sub_size) {
-        return 0; // 空串或 sub_str 比 big_str 长，直接返回 0
+int find_substr_num(const char* big_str, int big_size, const char* sub_str, int sub_size) {
+    if (sub_size <= 0 || big_size < sub_size) {
+        return 0;
     }
 
     int count = 0;
-    char* p = big_str;
-    while (p <= big_str + big_size - sub_size) {
-        if (strncmp(p, sub_str, sub_size) == 0) { // 检查当前子串是否匹配 sub_str
+    const char* p = big_str;
+    const char* end = big_str + big_size - sub_size;
+    
+    while (p <= end) {
+        if (strncmp(p, sub_str, sub_size) == 0) {
             count++;
-            p += sub_size; // 跳过已匹配的部分（非重叠匹配）
+            p += sub_size; // 非重叠匹配
         } else {
-            p++; // 不匹配则继续向后查找
+            p++;
         }
     }
     return count;

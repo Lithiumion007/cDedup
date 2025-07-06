@@ -49,8 +49,8 @@ class MetadataManager {
             this->metadata_file_path = file_path;
         }
 
-        int save();
-        int load();
+        void save();
+        void load();
         int save(int, int, int, int, int);
         int load(uint32_t, uint32_t);
         LookupResult dedupLookup(SHA1FP sha1);

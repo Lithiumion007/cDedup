@@ -192,7 +192,7 @@ class Config{
         enum TASK_TYPE taskTypeTrans(char* s){
             if(strcmp(s, "write") == 0){
                 return TASK_WRITE;
-            }else if(strcmp(s, "LOC") == 0){
+            }else if(strcmp(s, "cloc") == 0){
                 return TASK_LOC;
             }else if (strcmp(s, "write_pipeline") == 0){
                 return TASK_WRITE_PIPELINE;
@@ -252,6 +252,9 @@ class Config{
             } else if (strcmp(s, "fortran") == 0){
                 return LANG_FORTRAN;
             }   
+            // should not reach here
+            printf("语言转换失败\n");
+            return LANG_CPP;   
         }
 
         enum ClocMethod clocMethodTrans(char* s){
@@ -263,7 +266,10 @@ class Config{
                 return DC_NEWLINE;
             } else if (strcmp(s, "new+multi") == 0){
                 return DC_NEW_MULTI;
-            }   
+            }
+            // should not reach here
+            printf("cloc方法转换失败\n");
+            return NAIVE_CLOC;   
         }
 
         RESTORE_METHOD restoreMethodTrans(char* s){

@@ -1,7 +1,8 @@
 #ifndef  FASTCDC_H
 #define  FASTCDC_H
 
-#include <openssl/md5.h>
+#include <openssl/evp.h>
+#include <openssl/err.h>
 #include <openssl/sha.h>
 #include <stdio.h>
 #include <string.h>
@@ -9,6 +10,8 @@
 #include <zlib.h>
 #include "uthash.h"
 #include "config.h"
+
+void compute_md5(const unsigned char* data, size_t len, unsigned char* md5_out);
 
 // CDC
 void fastCDC_init(int fastcdc_avg_size, int NC_level);
