@@ -41,6 +41,13 @@ enum LANG{
     LANG_FORTRAN
 };
 
+enum ClocMethod{
+    NAIVE_CLOC = 0,
+    DC_NON_ALIGN,
+    DC_NEWLINE,
+    DC_NEW_MULTI
+};
+
 class Config{
     public:
         static Config& getInstance() {
@@ -66,6 +73,7 @@ class Config{
 
         int getBackwardScanScope(){return this->backward_scan_scope;}
         enum LANG getLanugage(){return this->language;}
+        enum ClocMethod getClocMethod(){return this->cloc_method;}
 
         // setters
         void setTask(char* s){this->tt = taskTypeTrans(s);}
@@ -85,6 +93,7 @@ class Config{
 
         void setBackwardScanScope(int n){this->backward_scan_scope = n;}
         void setLanguage(char* s){this->language = languageTrans(s);}
+        void setClocMethod(char* s){this->cloc_method = clocMethodTrans(s);}
 
         // you know
         void parse_argument(int argc, char **argv)
@@ -146,6 +155,8 @@ class Config{
                     Config::getInstance().setBackwardScanScope(val_int);
                 } else if(strcmp(name, "language") == 0) {
                     Config::getInstance().setLanguage(valuestring);
+                } else if(strcmp(name, "ClocMethod") == 0) {
+                    Config::getInstance().setClocMethod(valuestring);
                 }
             }
         }
@@ -171,6 +182,7 @@ class Config{
         // cloc
         int backward_scan_scope;
         enum LANG language;
+        enum ClocMethod cloc_method;
 
         Config() {
             avg_chunk_size = 4096;
@@ -239,6 +251,18 @@ class Config{
                 return LANG_DELPHI;
             } else if (strcmp(s, "fortran") == 0){
                 return LANG_FORTRAN;
+            }   
+        }
+
+        enum ClocMethod clocMethodTrans(char* s){
+            if(strcmp(s, "naive-cloc") == 0){
+                return NAIVE_CLOC;
+            } else if(strcmp(s, "non-align") == 0){
+                return DC_NON_ALIGN;
+            } else if (strcmp(s, "newline") == 0){
+                return DC_NEWLINE;
+            } else if (strcmp(s, "new+multi") == 0){
+                return DC_NEW_MULTI;
             }   
         }
 
